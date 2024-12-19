@@ -1,0 +1,20 @@
+version: 3
+
+env:
+  REPO_ROOT:
+    sh: git rev-parse --show-toplevel
+  TOKEN_SERVICE_ROOT: .
+
+tasks:
+  generate:
+    desc: run all code generators
+    cmds: 
+      - task: proto:generate
+
+  proto:generate:
+    summary: Generate proto buffer definitions
+    silent: true
+    cmds:
+      - echo Generating proto buffers...
+      - |
+        protoc -I ./protos --go_out=./gen --go-grpc_out=./gen ./protos/v1/*.proto

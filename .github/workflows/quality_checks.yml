@@ -1,0 +1,43 @@
+name: Go Quality Check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  quality-check:
+    runs-on: self-hosted 
+
+    steps:
+      # Step 1: Checkout the code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Step 2: Set up Go environment
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.22  # Specify the Go version you are using
+
+      # Step 3: Install golangci-lint
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.53.3
+          golangci-lint --version
+
+      # Step 4: Run golangci-lint
+      - name: Lint code
+        run: golangci-lint run ./...
+
+      # Step 5: Check code formatting
+      - name: Check formatting
+        run: gofmt -l .
+        continue-on-error: true  # Show formatting issues but do not fail the job
+
+      # Step 6: Run tests
+      - name: Run tests
+        run: go test -v ./...
