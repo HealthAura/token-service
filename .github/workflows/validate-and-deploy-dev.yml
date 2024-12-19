@@ -1,0 +1,133 @@
+name: Validate and Deploy to Dev
+
+on:
+  pull_request:
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: token-service-stack
+
+jobs:
+  quality-check:
+    name: Code Quality Checks
+    runs-on: [self-hosted, dev] 
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.22  
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.60
+
+      - name: Check formatting
+        run: find . -path ./vendor -prune -o -name '*.go' -print | xargs gofmt -l
+
+  unit-test:
+    name: Code Unit Tests
+    runs-on: [self-hosted, dev] 
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.22  
+
+      - name: Run tests
+        run: go test -v --run=Unit ./...
+
+  build-and-pkg-lambda:
+    name: Build and Upload to S3
+    runs-on: [self-hosted, dev] 
+    needs: [quality-check, unit-test]
+    outputs:
+      s3_key: ${{ steps.set-s3-key.outputs.s3_key }}
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.22  
+
+      - name: Build Lambda Binary
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o bootstrap main.go
+
+      - name: Zip Lambda Binary
+        run: zip deployment.zip bootstrap
+
+      - name: Upload to S3
+        run: |
+          aws s3 cp deployment.zip s3://${{ secrets.LAMBDA_BUCKET }}/deployment-${{ github.sha }}.zip
+        env:
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+
+      - name: Set S3 Key Output
+        id: set-s3-key
+        run: echo "::set-output name=s3_key::deployment-${{ github.sha }}.zip"
+
+  deploy-infrastructure:
+    runs-on: [self-hosted, dev] 
+    needs: [build-and-pkg-lambda]
+    name: Deploy CDK
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.22 
+
+      - name: Set up Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: "22"
+
+      - name: Install CDK
+        run: |
+          npm install -g aws-cdk
+
+      - name: CDK Synth
+        run: |
+            export ENVIRONMENT=${{ vars.ENVIRONMENT }}
+            export AWS_ACCOUNT=${{ secrets.AWS_ACCOUNT_ID }}
+            export VPC_ID=${{ secrets.VPC_ID }}
+            export LAMBDA_CODE_S3_KEY=${{ needs.build-and-pkg-lambda.outputs.s3_key }}
+            cd cloudformation
+            cdk synth
+
+      - name: Deploy to AWS
+        run: |
+            export ENVIRONMENT=${{ vars.ENVIRONMENT }}
+            export AWS_ACCOUNT=${{ secrets.AWS_ACCOUNT_ID }}
+            export VPC_ID=${{ secrets.VPC_ID }}
+            export LAMBDA_CODE_S3_KEY=${{ needs.build-and-pkg-lambda.outputs.s3_key }}
+            cd cloudformation
+            cdk deploy --all --require-approval=never
+
+  integration-test:
+    name: Code Integration Tests
+    needs: [deploy-infrastructure]
+    runs-on: [self-hosted, dev] 
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.22  
+
+      - name: Run tests
+        run: |
+            export TOKEN_SERVICE_URL=${{ secrets.TOKEN_SERVICE_URL }}
+            go test -count=1 -v --run=Integration ./...
