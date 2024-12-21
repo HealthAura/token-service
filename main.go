@@ -20,9 +20,5 @@ func init() {
 }
 
 func main() {
-	if application.Config.Service.IsGRPC {
-		server.StartGRPC(application)
-	} else {
-		server.StartLambda(application, application.Logger)
-	}
+	server.StartLambda(application, application.Logger)
 }

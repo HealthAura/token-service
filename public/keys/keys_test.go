@@ -4,13 +4,12 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestSignAndVerify(t *testing.T) {
+func TestSignAndVerifyUnit(t *testing.T) {
 	testPayload := []byte("Test Payload")
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -32,7 +31,7 @@ func TestSignAndVerify(t *testing.T) {
 	assert.True(t, ok)
 }
 
-func TestPublicKeySerialization(t *testing.T) {
+func TestPublicKeySerializationUnit(t *testing.T) {
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if !assert.Nil(t, err) {
 		t.FailNow()
@@ -49,7 +48,7 @@ func TestPublicKeySerialization(t *testing.T) {
 	assert.Equal(t, serializedPublicKey, serializedPublicKey2)
 }
 
-func TestSignatureSerialization(t *testing.T) {
+func TestSignatureSerializationUnit(t *testing.T) {
 	testPayload := []byte("Test Payload")
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -75,7 +74,7 @@ func TestSignatureSerialization(t *testing.T) {
 	assert.Equal(t, serializedSignature, serializedSignature2)
 }
 
-func TestPrivateKeySerialization(t *testing.T) {
+func TestPrivateKeySerializationUnit(t *testing.T) {
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if !assert.Nil(t, err) {
 		t.FailNow()
@@ -85,9 +84,6 @@ func TestPrivateKeySerialization(t *testing.T) {
 	if !assert.Nil(t, err) {
 		t.FailNow()
 	}
-
-	printBytes(v)
-	t.Fail()
 
 	deserializedPrivateKey, err := DeserializePrivateKey(v)
 	if !assert.Nil(t, err) {
@@ -100,17 +96,4 @@ func TestPrivateKeySerialization(t *testing.T) {
 	}
 
 	assert.Equal(t, v, v2)
-}
-
-func printBytes(v []byte) {
-	str := "["
-	for i, b := range v {
-		if i == len(v)-1 {
-			str += fmt.Sprintf("%d", b)
-		} else {
-			str += fmt.Sprintf("%d,", b)
-		}
-	}
-
-	str += "]"
 }

@@ -1,946 +1,976 @@
 package tokens
 
-// import (
-// 	"context"
-// 	"crypto/ecdsa"
-// 	"crypto/elliptic"
-// 	"crypto/rand"
-// 	"encoding/base64"
-// 	"encoding/json"
-// 	"testing"
-// 	"time"
+import (
+	"context"
+	"net/http"
+	"testing"
 
-// 	"github.com/pkg/errors"
-// 	"github.com/stretchr/testify/assert"
-// 	tokenservice "github.com/HealthAura/token-service/gen/token-service.v1"
-// 	"github.com/HealthAura/token-service/public/dpop"
-// 	"github.com/HealthAura/token-service/public/keys"
-// 	"github.com/HealthAura/token-service/public/tokens"
-// 	"github.com/HealthAura/token-service/public/tokens/validator/tokenstore"
-// 	"github.com/HealthAura/token-service/public/tokens/validator/tokenstore/tokenstoremock"
-// )
+	tokenservice "github.com/HealthAura/token-service/gen/go/v1"
+	"github.com/HealthAura/token-service/public/jwt"
+	"github.com/HealthAura/token-service/public/jwt/jwtmock"
 
-// func TestGenerateUnit(t *testing.T) {
-// 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
+	"github.com/stretchr/testify/assert"
+)
 
-// 	goldenProof, _ := generateProof(t)
-// 	invalidSignatureProof, _ := generateProofWithBadSignature(t)
+func TestGenerateUnit(t *testing.T) {
+	type input struct {
+		req  func() *tokenservice.TokenserviceGenerateRequest
+		orch jwt.Orchestrator
+	}
 
-// 	type input struct {
-// 		req                 *tokenservice.GenerateRequest
-// 		store               tokenstore.Store
-// 		validateDPoPNonceFn validateDPoPNonceFn
-// 	}
+	type want struct {
+		err string
+	}
 
-// 	type want struct {
-// 		err string
-// 	}
+	cases := []struct {
+		name  string
+		input input
+		want  want
+	}{
+		{
+			"handles failure to parse AccessTokenTtl",
+			input{
+				req: func() *tokenservice.TokenserviceGenerateRequest {
+					req := mockGenerateRequest()
+					req.AccessTokenTtl = strToPtr("invalid")
+					return req
+				},
+			},
+			want{
+				err: "failed to parse access token TTL",
+			},
+		},
+		{
+			"handles failure to parse dpopTTL",
+			input{
+				req: func() *tokenservice.TokenserviceGenerateRequest {
+					req := mockGenerateRequest()
+					req.Dpop.TtlMinutes = strToPtr("invalid")
+					return req
+				},
+			},
+			want{
+				err: "failed to parse dpop TTL",
+			},
+		},
+		{
+			"failed to generate token",
+			input{
+				req: func() *tokenservice.TokenserviceGenerateRequest {
+					return mockGenerateRequest()
+				},
+				orch: jwtmock.MockOrchestrator{
+					GenerateTokenError: true,
+				},
+			},
+			want{
+				err: jwtmock.GenerateTokenError,
+			},
+		},
+		{
+			"failed to parse refresh TTL",
+			input{
+				req: func() *tokenservice.TokenserviceGenerateRequest {
+					req := mockGenerateRequest()
+					req.RefreshTokenTtl = strToPtr("invalid")
 
-// 	cases := []struct {
-// 		name  string
-// 		input input
-// 		want  want
-// 	}{
-// 		{
-// 			"handles failure to decode dpop proof",
-// 			input{
-// 				req: &tokenservice.GenerateRequest{
-// 					Dpop: &tokenservice.DPoP{
-// 						Proof: "garbage",
-// 					},
-// 				},
-// 			},
-// 			want{
-// 				err: "failed to decode dpop proof",
-// 			},
-// 		},
-// 		{
-// 			"handles invalid proof signature",
-// 			input{
-// 				req: &tokenservice.GenerateRequest{
-// 					Dpop: &tokenservice.DPoP{
-// 						Proof: invalidSignatureProof,
-// 					},
-// 				},
-// 			},
-// 			want{
-// 				err: "dpop proof has invalid signature",
-// 			},
-// 		},
-// 		{
-// 			"handles invalid claims",
-// 			input{
-// 				req: &tokenservice.GenerateRequest{
-// 					Dpop: &tokenservice.DPoP{
-// 						Proof: goldenProof,
-// 						WantedClaims: &tokenservice.Claims{
-// 							GrpcMethod: "somemethod",
-// 						},
-// 					},
-// 				},
-// 			},
-// 			want{
-// 				err: "dpop proof has invalid claims",
-// 			},
-// 		},
-// 		{
-// 			"handles failure to validate dpop nonce",
-// 			input{
-// 				req: &tokenservice.GenerateRequest{
-// 					Dpop: &tokenservice.DPoP{
-// 						Proof: goldenProof,
-// 						WantedClaims: &tokenservice.Claims{
-// 							GrpcMethod:        "/some/method",
-// 							GrpcRequestDigest: []byte("somedigest"),
-// 							Ttl:               60, // seconds
-// 						},
-// 					},
-// 				},
-// 				validateDPoPNonceFn: func(ctx context.Context, req *tokenservice.ValidateRequest) (*tokenservice.ValidateResponse, error) {
-// 					return nil, errors.New("failed to validate dpop nonce")
-// 				},
-// 			},
-// 			want{
-// 				err: "failed to validate dpop nonce",
-// 			},
-// 		},
-// 		{
-// 			"handles dpop nonce invalid",
-// 			input{
-// 				req: &tokenservice.GenerateRequest{
-// 					Dpop: &tokenservice.DPoP{
-// 						Proof: goldenProof,
-// 						WantedClaims: &tokenservice.Claims{
-// 							GrpcMethod:        "/some/method",
-// 							GrpcRequestDigest: []byte("somedigest"),
-// 							Ttl:               60, // seconds
-// 						},
-// 					},
-// 				},
-// 				validateDPoPNonceFn: func(ctx context.Context, req *tokenservice.ValidateRequest) (*tokenservice.ValidateResponse, error) {
-// 					return &tokenservice.ValidateResponse{
-// 						ValidationStatus: tokenservice.ValidationStatus_EXPIRED,
-// 					}, nil
-// 				},
-// 			},
-// 			want{
-// 				err: "dpop nonce invalid",
-// 			},
-// 		},
-// 		{
-// 			"handles failure to revoke dpop nonce",
-// 			input{
-// 				req: &tokenservice.GenerateRequest{
-// 					Dpop: &tokenservice.DPoP{
-// 						Proof: goldenProof,
-// 						WantedClaims: &tokenservice.Claims{
-// 							GrpcMethod:        "/some/method",
-// 							GrpcRequestDigest: []byte("somedigest"),
-// 							Ttl:               60, // seconds
-// 						},
-// 					},
-// 				},
-// 				store: tokenstoremock.Store{
-// 					DeleteTokenErr: true,
-// 				},
-// 				validateDPoPNonceFn: func(ctx context.Context, req *tokenservice.ValidateRequest) (*tokenservice.ValidateResponse, error) {
-// 					return &tokenservice.ValidateResponse{
-// 						ValidationStatus: tokenservice.ValidationStatus_VALID,
-// 					}, nil
-// 				},
-// 			},
-// 			want{
-// 				err: tokenstoremock.DeleteTokenErr,
-// 			},
-// 		},
-// 		{
-// 			"handles failure to store split token in redis",
-// 			input{
-// 				req: &tokenservice.GenerateRequest{
-// 					Dpop: &tokenservice.DPoP{
-// 						Proof: goldenProof,
-// 						WantedClaims: &tokenservice.Claims{
-// 							GrpcMethod:        "/some/method",
-// 							GrpcRequestDigest: []byte("somedigest"),
-// 							Ttl:               60, // seconds
-// 						},
-// 					},
-// 				},
-// 				store: tokenstoremock.Store{
-// 					StoreTokenErr: true,
-// 				},
-// 				validateDPoPNonceFn: func(ctx context.Context, req *tokenservice.ValidateRequest) (*tokenservice.ValidateResponse, error) {
-// 					return &tokenservice.ValidateResponse{
-// 						ValidationStatus: tokenservice.ValidationStatus_VALID,
-// 					}, nil
-// 				},
-// 			},
-// 			want{
-// 				err: tokenstoremock.StoreTokenErr,
-// 			},
-// 		},
-// 		{
-// 			"is successful with dpop",
-// 			input{
-// 				req: &tokenservice.GenerateRequest{
-// 					Dpop: &tokenservice.DPoP{
-// 						Proof: goldenProof,
-// 						WantedClaims: &tokenservice.Claims{
-// 							GrpcMethod:        "/some/method",
-// 							GrpcRequestDigest: []byte("somedigest"),
-// 							Ttl:               60, // seconds
-// 						},
-// 					},
-// 				},
-// 				store: tokenstoremock.Store{},
-// 				validateDPoPNonceFn: func(ctx context.Context, req *tokenservice.ValidateRequest) (*tokenservice.ValidateResponse, error) {
-// 					return &tokenservice.ValidateResponse{
-// 						ValidationStatus: tokenservice.ValidationStatus_VALID,
-// 					}, nil
-// 				},
-// 			},
-// 			want{},
-// 		},
-// 		{
-// 			"is successful without dpop",
-// 			input{
-// 				req:   &tokenservice.GenerateRequest{},
-// 				store: tokenstoremock.Store{},
-// 			},
-// 			want{},
-// 		},
-// 	}
+					return req
+				},
+				orch: jwtmock.MockOrchestrator{},
+			},
+			want{
+				err: "failed to parse refresh TTL",
+			},
+		},
+		{
+			"is successful",
+			input{
+				req: func() *tokenservice.TokenserviceGenerateRequest {
+					return mockGenerateRequest()
+				},
+				orch: jwtmock.MockOrchestrator{},
+			},
+			want{},
+		},
+	}
 
-// 	for _, tt := range cases {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			manager := manager{
-// 				store:               tt.input.store,
-// 				privateKey:          privateKey,
-// 				validateDPoPNonceFn: tt.input.validateDPoPNonceFn,
-// 			}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := manager{
+				orch: tt.input.orch,
+			}
 
-// 			_, err := manager.Generate(context.Background(), tt.input.req)
-// 			if tt.want.err != "" {
-// 				if assert.NotNil(t, err) {
-// 					assert.Contains(t, err.Error(), tt.want.err)
-// 				}
-// 			} else {
-// 				assert.Nil(t, err)
-// 			}
-// 		})
-// 	}
-// }
+			_, err := manager.Generate(context.Background(), tt.input.req())
+			if tt.want.err != "" {
+				if assert.NotNil(t, err) {
+					assert.Contains(t, err.Error(), tt.want.err)
+				}
+			} else {
+				assert.Nil(t, err)
+			}
+		})
+	}
+}
 
-// func TestValidateUnit(t *testing.T) {
-// 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
+func TestRefreshUnit(t *testing.T) {
+	type input struct {
+		req  func() *tokenservice.TokenserviceRefreshRequest
+		orch jwt.Orchestrator
+	}
 
-// 	goldenToken, _ := generateToken(t, privateKey)
-// 	expiredToken, _ := generateExpiredToken(t, privateKey)
-// 	boundToken, _ := generateTokenWithThumbprint(t, privateKey)
-// 	goldenProof, _ := generateProof(t)
-// 	invalidSignatureProof, _ := generateProofWithBadSignature(t)
+	type want struct {
+		err string
+	}
 
-// 	type input struct {
-// 		req                 *tokenservice.ValidateRequest
-// 		store               tokenstore.Store
-// 		validateDPoPNonceFn validateDPoPNonceFn
-// 		revokeDPoPNonceFn   revokeDPoPNonceFn
-// 	}
+	cases := []struct {
+		name  string
+		input input
+		want  want
+	}{
+		{
+			"failed to ValidateAndVerify",
+			input{
+				req: func() *tokenservice.TokenserviceRefreshRequest {
+					return mockRefreshRequest()
+				},
+				orch: jwtmock.MockOrchestrator{
+					ValidateAndVerifyError: true,
+				},
+			},
+			want{
+				err: jwtmock.ValidateAndVerifyError,
+			},
+		},
+		{
+			"failed to RevokeToken",
+			input{
+				req: func() *tokenservice.TokenserviceRefreshRequest {
+					return mockRefreshRequest()
+				},
+				orch: jwtmock.MockOrchestrator{
+					RevokeTokenError: true,
+				},
+			},
+			want{
+				err: jwtmock.RevokeTokenError,
+			},
+		},
+		{
+			"failed to Generate",
+			input{
+				req: func() *tokenservice.TokenserviceRefreshRequest {
+					return mockRefreshRequest()
+				},
+				orch: jwtmock.MockOrchestrator{
+					GenerateTokenError: true,
+				},
+			},
+			want{
+				err: jwtmock.GenerateTokenError,
+			},
+		},
+		{
+			"is sucessful",
+			input{
+				req: func() *tokenservice.TokenserviceRefreshRequest {
+					return mockRefreshRequest()
+				},
+				orch: jwtmock.MockOrchestrator{},
+			},
+			want{},
+		},
+	}
 
-// 	type want struct {
-// 		err    string
-// 		status tokenservice.ValidationStatus
-// 	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := manager{
+				orch: tt.input.orch,
+			}
 
-// 	cases := []struct {
-// 		name  string
-// 		input input
-// 		want  want
-// 	}{
-// 		{
-// 			"handles token not found",
-// 			input{
-// 				req: &tokenservice.ValidateRequest{
-// 					Token: goldenToken.PublicTokenEncoded,
-// 				},
-// 				store: tokenstoremock.Store{
-// 					GetTokenErr: true,
-// 				},
-// 			},
-// 			want{
-// 				status: tokenservice.ValidationStatus_NOTFOUND,
-// 			},
-// 		},
-// 		{
-// 			"handles invalid signature",
-// 			input{
-// 				req: &tokenservice.ValidateRequest{},
-// 				store: tokenstoremock.Store{
-// 					WantToken: generateTokenWithBadSignature(t),
-// 				},
-// 			},
-// 			want{
-// 				status: tokenservice.ValidationStatus_INVALID_SIGNATURE,
-// 			},
-// 		},
-// 		{
-// 			"handles expired token",
-// 			input{
-// 				req: &tokenservice.ValidateRequest{
-// 					Token: goldenToken.PublicTokenEncoded,
-// 				},
-// 				store: tokenstoremock.Store{
-// 					WantToken: expiredToken,
-// 				},
-// 			},
-// 			want{
-// 				status: tokenservice.ValidationStatus_EXPIRED,
-// 			},
-// 		},
-// 		{
-// 			"handles missing dpop proof",
-// 			input{
-// 				req: &tokenservice.ValidateRequest{
-// 					Token: goldenToken.PublicTokenEncoded,
-// 				},
-// 				store: tokenstoremock.Store{
-// 					WantToken: boundToken,
-// 				},
-// 			},
-// 			want{
-// 				status: tokenservice.ValidationStatus_DPOP_PROOF_FAILURE,
-// 			},
-// 		},
-// 		{
-// 			"handles dpop public key not matching token thumbprint",
-// 			input{
-// 				req: &tokenservice.ValidateRequest{
-// 					Token: boundToken.PublicTokenEncoded,
-// 					Dpop: &tokenservice.DPoP{
-// 						Proof: goldenProof,
-// 					},
-// 				},
-// 				store: tokenstoremock.Store{
-// 					WantToken: boundToken,
-// 				},
-// 			},
-// 			want{
-// 				status: tokenservice.ValidationStatus_DPOP_PROOF_FAILURE,
-// 			},
-// 		},
-// 		{
-// 			"handles dpop proof signature not matching public key",
-// 			input{
-// 				req: &tokenservice.ValidateRequest{
-// 					Token: boundToken.PublicTokenEncoded,
-// 					Dpop: &tokenservice.DPoP{
-// 						Proof: invalidSignatureProof,
-// 					},
-// 				},
-// 				store: tokenstoremock.Store{
-// 					WantToken: boundToken,
-// 				},
-// 			},
-// 			want{
-// 				status: tokenservice.ValidationStatus_DPOP_PROOF_FAILURE,
-// 			},
-// 		},
-// 		{
-// 			"handles invalid claims in dpop proof",
-// 			input{
-// 				req: &tokenservice.ValidateRequest{
-// 					Token: boundToken.PublicTokenEncoded,
-// 					Dpop: &tokenservice.DPoP{
-// 						Proof: goldenProof,
-// 						WantedClaims: &tokenservice.Claims{
-// 							GrpcMethod: "/garbage",
-// 						},
-// 					},
-// 				},
-// 				store: tokenstoremock.Store{
-// 					WantToken: boundToken,
-// 				},
-// 			},
-// 			want{
-// 				status: tokenservice.ValidationStatus_DPOP_PROOF_FAILURE,
-// 			},
-// 		},
-// 		// {
-// 		// 	"handles failure to validate dpop nonce",
-// 		// 	input{
-// 		// 		req: &tokenservice.ValidateRequest{
-// 		// 			Token: goldenToken,
-// 		// 			Dpop: &tokenservice.DPoP{
-// 		// 				Proof: goldenProof,
-// 		// 				WantedClaims: &tokenservice.Claims{
-// 		// 					GrpcMethod:        "/some/method",
-// 		// 					GrpcRequestDigest: []byte("somedigest"),
-// 		// 					Ttl:               60,
-// 		// 				},
-// 		// 			},
-// 		// 		},
-// 		// 		db: mockdb.Repository{
-// 		// 			TokenRepo: tokensmock.Repository{
-// 		// 				WantToken: tokens.Token{
-// 		// 					Expiry:         time.Now().Add(time.Minute).Unix(),
-// 		// 					ThumbprintHash: goldenThumbprintHash,
-// 		// 				},
-// 		// 			},
-// 		// 		},
-// 		// 		validateDPoPNonceFn: func(ctx context.Context, req *tokenservice.ValidateRequest) (*tokenservice.ValidateResponse, error) {
-// 		// 			return nil, errors.New("failed to validate dpop nonce")
-// 		// 		},
-// 		// 	},
-// 		// 	want{
-// 		// 		err: "failed to validate dpop nonce",
-// 		// 	},
-// 		// },
-// 		// {
-// 		// 	"handles dpop nonce invalid",
-// 		// 	input{
-// 		// 		req: &tokenservice.ValidateRequest{
-// 		// 			Token: goldenToken,
-// 		// 			Dpop: &tokenservice.DPoP{
-// 		// 				Proof: goldenProof,
-// 		// 				WantedClaims: &tokenservice.Claims{
-// 		// 					GrpcMethod:        "/some/method",
-// 		// 					GrpcRequestDigest: []byte("somedigest"),
-// 		// 					Ttl:               60,
-// 		// 				},
-// 		// 			},
-// 		// 		},
-// 		// 		db: mockdb.Repository{
-// 		// 			TokenRepo: tokensmock.Repository{
-// 		// 				WantToken: tokens.Token{
-// 		// 					Expiry:         time.Now().Add(time.Minute).Unix(),
-// 		// 					ThumbprintHash: goldenThumbprintHash,
-// 		// 				},
-// 		// 			},
-// 		// 		},
-// 		// 		validateDPoPNonceFn: func(ctx context.Context, req *tokenservice.ValidateRequest) (*tokenservice.ValidateResponse, error) {
-// 		// 			return &tokenservice.ValidateResponse{
-// 		// 				ValidationStatus: tokenservice.ValidationStatus_EXPIRED,
-// 		// 			}, nil
-// 		// 		},
-// 		// 	},
-// 		// 	want{
-// 		// 		status: tokenservice.ValidationStatus_DPOP_PROOF_FAILURE,
-// 		// 	},
-// 		// },
-// 		// {
-// 		// 	"handles failure to revoke dpop nonce",
-// 		// 	input{
-// 		// 		req: &tokenservice.ValidateRequest{
-// 		// 			Token: goldenToken,
-// 		// 			Dpop: &tokenservice.DPoP{
-// 		// 				Proof: goldenProof,
-// 		// 				WantedClaims: &tokenservice.Claims{
-// 		// 					GrpcMethod:        "/some/method",
-// 		// 					GrpcRequestDigest: []byte("somedigest"),
-// 		// 					Ttl:               60,
-// 		// 				},
-// 		// 			},
-// 		// 		},
-// 		// 		db: mockdb.Repository{
-// 		// 			TokenRepo: tokensmock.Repository{
-// 		// 				WantToken: tokens.Token{
-// 		// 					Expiry:         time.Now().Add(time.Minute).Unix(),
-// 		// 					ThumbprintHash: goldenThumbprintHash,
-// 		// 				},
-// 		// 			},
-// 		// 		},
-// 		// 		validateDPoPNonceFn: func(ctx context.Context, req *tokenservice.ValidateRequest) (*tokenservice.ValidateResponse, error) {
-// 		// 			return &tokenservice.ValidateResponse{
-// 		// 				ValidationStatus: tokenservice.ValidationStatus_VALID,
-// 		// 			}, nil
-// 		// 		},
-// 		// 		revokeDPoPNonceFn: func(ctx context.Context, req *tokenservice.RevokeRequest) (*tokenservice.RevokeResponse, error) {
-// 		// 			return nil, errors.New("failed to revoke nonce")
-// 		// 		},
-// 		// 	},
-// 		// 	want{
-// 		// 		err: "failed to revoke nonce",
-// 		// 	},
-// 		// },
-// 		// {
-// 		// 	"handles valid token",
-// 		// 	input{
-// 		// 		req: &tokenservice.ValidateRequest{
-// 		// 			Token: goldenToken,
-// 		// 			Dpop: &tokenservice.DPoP{
-// 		// 				Proof: goldenProof,
-// 		// 				WantedClaims: &tokenservice.Claims{
-// 		// 					GrpcMethod:        "/some/method",
-// 		// 					GrpcRequestDigest: []byte("somedigest"),
-// 		// 					Ttl:               60,
-// 		// 				},
-// 		// 			},
-// 		// 		},
-// 		// 		db: mockdb.Repository{
-// 		// 			TokenRepo: tokensmock.Repository{
-// 		// 				WantToken: tokens.Token{
-// 		// 					Expiry:         time.Now().Add(time.Minute).Unix(),
-// 		// 					ThumbprintHash: goldenThumbprintHash,
-// 		// 				},
-// 		// 			},
-// 		// 		},
-// 		// 		validateDPoPNonceFn: func(ctx context.Context, req *tokenservice.ValidateRequest) (*tokenservice.ValidateResponse, error) {
-// 		// 			return &tokenservice.ValidateResponse{
-// 		// 				ValidationStatus: tokenservice.ValidationStatus_VALID,
-// 		// 			}, nil
-// 		// 		},
-// 		// 		revokeDPoPNonceFn: func(ctx context.Context, req *tokenservice.RevokeRequest) (*tokenservice.RevokeResponse, error) {
-// 		// 			return &tokenservice.RevokeResponse{}, nil
-// 		// 		},
-// 		// 	},
-// 		// 	want{
-// 		// 		status: tokenservice.ValidationStatus_VALID,
-// 		// 	},
-// 		// },
-// 	}
+			_, err := manager.Refresh(context.Background(), tt.input.req())
+			if tt.want.err != "" {
+				if assert.NotNil(t, err) {
+					assert.Contains(t, err.Error(), tt.want.err)
+				}
+			} else {
+				assert.Nil(t, err)
+			}
+		})
+	}
+}
 
-// 	for _, tt := range cases {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			manager := manager{
-// 				store:               tt.input.store,
-// 				privateKey:          privateKey,
-// 				validateDPoPNonceFn: tt.input.validateDPoPNonceFn,
-// 				revokeDPoPNonceFn:   tt.input.revokeDPoPNonceFn,
-// 			}
+func TestGenerateNonceUnit(t *testing.T) {
+	type input struct {
+		req  func() *tokenservice.TokenserviceGenerateNonceRequest
+		orch jwt.Orchestrator
+	}
 
-// 			resp, err := manager.Validate(context.Background(), tt.input.req)
-// 			if tt.want.err != "" {
-// 				if assert.NotNil(t, err) {
-// 					assert.Contains(t, err.Error(), tt.want.err)
-// 				}
-// 			} else {
-// 				assert.Nil(t, err)
-// 				assert.Equal(t, tt.want.status, resp.ValidationStatus)
-// 			}
-// 		})
-// 	}
-// }
+	type want struct {
+		err string
+	}
 
-// func TestRefreshUnit(t *testing.T) {
-// 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
+	cases := []struct {
+		name  string
+		input input
+		want  want
+	}{
+		{
+			"handles failure to parse nonce TTL",
+			input{
+				req: func() *tokenservice.TokenserviceGenerateNonceRequest {
+					req := mockGenerateNonceRequest()
+					req.NonceTtl = strToPtr("invalid")
+					return req
+				},
+			},
+			want{
+				err: "failed to parse nonce TTL",
+			},
+		},
+		{
+			"handles failure to generate nonce",
+			input{
+				req: func() *tokenservice.TokenserviceGenerateNonceRequest {
+					return mockGenerateNonceRequest()
+				},
+				orch: jwtmock.MockOrchestrator{
+					GenerateNonceError: true,
+				},
+			},
+			want{
+				err: jwtmock.GenerateNonceError,
+			},
+		},
+		{
+			"is successful",
+			input{
+				req: func() *tokenservice.TokenserviceGenerateNonceRequest {
+					return mockGenerateNonceRequest()
+				},
+				orch: jwtmock.MockOrchestrator{},
+			},
+			want{},
+		},
+	}
 
-// 	goldenToken, _ := generateToken(t, privateKey)
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := manager{
+				orch: tt.input.orch,
+			}
 
-// 	type input struct {
-// 		req                *tokenservice.RefreshRequest
-// 		db                 db.Repository
-// 		generateFn         generateFn
-// 		generateWithDPoPFn generateWithDPoPFn
-// 	}
+			_, err := manager.GenerateNonce(context.Background(), tt.input.req())
+			if tt.want.err != "" {
+				if assert.NotNil(t, err) {
+					assert.Contains(t, err.Error(), tt.want.err)
+				}
+			} else {
+				assert.Nil(t, err)
+			}
+		})
+	}
+}
 
-// 	type want struct {
-// 		err string
-// 	}
+func TestValidateGenerateNonceRequestUnit(t *testing.T) {
+	type input struct {
+		req func() *tokenservice.TokenserviceGenerateNonceRequest
+	}
 
-// 	cases := []struct {
-// 		name  string
-// 		input input
-// 		want  want
-// 	}{
-// 		{
-// 			"handles failure to decode split token",
-// 			input{
-// 				req: &tokenservice.RefreshRequest{
-// 					RefreshToken: "garbage",
-// 				},
-// 			},
-// 			want{
-// 				err: "invalid character",
-// 			},
-// 		},
-// 		{
-// 			"handles invalid signature",
-// 			input{
-// 				req: &tokenservice.RefreshRequest{
-// 					RefreshToken: generateTokenWithBadSignature(t),
-// 				},
-// 			},
-// 			want{
-// 				err: "token signature does not match",
-// 			},
-// 		},
-// 		{
-// 			"handles failure to get token from database",
-// 			input{
-// 				req: &tokenservice.RefreshRequest{
-// 					RefreshToken: goldenToken,
-// 				},
-// 				db: mockdb.Repository{
-// 					RefreshTknRepo: refreshtokensmock.Repository{
-// 						GetErr: true,
-// 					},
-// 				},
-// 			},
-// 			want{
-// 				err: refreshtokensmock.GetErr,
-// 			},
-// 		},
-// 		{
-// 			"handles expired token",
-// 			input{
-// 				req: &tokenservice.RefreshRequest{
-// 					RefreshToken: goldenToken,
-// 				},
-// 				db: mockdb.Repository{
-// 					RefreshTknRepo: refreshtokensmock.Repository{
-// 						WantRefreshToken: tokens.Token{
-// 							Expiry: time.Now().Unix(),
-// 						},
-// 					},
-// 				},
-// 			},
-// 			want{
-// 				err: "refresh token is expired",
-// 			},
-// 		},
-// 		{
-// 			"handles failure to generate",
-// 			input{
-// 				req: &tokenservice.RefreshRequest{
-// 					RefreshToken: goldenToken,
-// 				},
-// 				db: mockdb.Repository{
-// 					RefreshTknRepo: refreshtokensmock.Repository{
-// 						WantRefreshToken: tokens.Token{
-// 							Expiry: time.Now().Add(time.Minute).Unix(),
-// 						},
-// 					},
-// 				},
-// 				generateFn: func(ctx context.Context, req *tokenservice.GenerateRequest) (*tokenservice.GenerateResponse, error) {
-// 					return nil, errors.New("failed to generate")
-// 				},
-// 			},
-// 			want{
-// 				err: "failed to generate",
-// 			},
-// 		},
-// 		{
-// 			"handles failure to generate with dpop",
-// 			input{
-// 				req: &tokenservice.RefreshRequest{
-// 					RefreshToken: goldenToken,
-// 				},
-// 				db: mockdb.Repository{
-// 					RefreshTknRepo: refreshtokensmock.Repository{
-// 						WantRefreshToken: tokens.Token{
-// 							Expiry: time.Now().Add(time.Minute).Unix(),
-// 						},
-// 						WantToken: tokens.Token{
-// 							TTL:            60,
-// 							ThumbprintHash: []byte("somethumbprint"),
-// 						},
-// 					},
-// 				},
-// 				generateWithDPoPFn: func(ctx context.Context, req *tokenservice.GenerateRequest) (*tokenservice.GenerateResponse, error) {
-// 					return nil, errors.New("failed to generate with dpop")
-// 				},
-// 			},
-// 			want{
-// 				err: "refesh token request requires dpop proof",
-// 			},
-// 		},
-// 		{
-// 			"handles failure to delete old tokens",
-// 			input{
-// 				req: &tokenservice.RefreshRequest{
-// 					RefreshToken: goldenToken,
-// 					Dpop:         &tokenservice.DPoP{},
-// 				},
-// 				db: mockdb.Repository{
-// 					RefreshTknRepo: refreshtokensmock.Repository{
-// 						WantRefreshToken: tokens.Token{
-// 							Expiry: time.Now().Add(time.Minute).Unix(),
-// 						},
-// 						WantToken: tokens.Token{
-// 							TTL:            60,
-// 							ThumbprintHash: []byte("somethumbprint"),
-// 						},
-// 					},
-// 					TokenRepo: tokensmock.Repository{
-// 						DeleteErr: true,
-// 					},
-// 				},
-// 				generateWithDPoPFn: func(ctx context.Context, req *tokenservice.GenerateRequest) (*tokenservice.GenerateResponse, error) {
-// 					return &tokenservice.GenerateResponse{}, nil
-// 				},
-// 			},
-// 			want{
-// 				err: tokensmock.DeleteErr,
-// 			},
-// 		},
-// 		{
-// 			"is succesful",
-// 			input{
-// 				req: &tokenservice.RefreshRequest{
-// 					RefreshToken: goldenToken,
-// 					Dpop:         &tokenservice.DPoP{},
-// 				},
-// 				db: mockdb.Repository{
-// 					RefreshTknRepo: refreshtokensmock.Repository{
-// 						WantRefreshToken: tokens.Token{
-// 							Expiry: time.Now().Add(time.Minute).Unix(),
-// 						},
-// 						WantToken: tokens.Token{
-// 							TTL:            60,
-// 							ThumbprintHash: []byte("somethumbprint"),
-// 						},
-// 					},
-// 					TokenRepo: tokensmock.Repository{},
-// 				},
-// 				generateWithDPoPFn: func(ctx context.Context, req *tokenservice.GenerateRequest) (*tokenservice.GenerateResponse, error) {
-// 					return &tokenservice.GenerateResponse{}, nil
-// 				},
-// 			},
-// 			want{},
-// 		},
-// 	}
+	type want struct {
+		err string
+	}
 
-// 	for _, tt := range cases {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			manager := manager{
-// 				dbrepo:             tt.input.db,
-// 				privateKey:         privateKey,
-// 				generateFn:         tt.input.generateFn,
-// 				generateWithDPoPFn: tt.input.generateWithDPoPFn,
-// 			}
+	cases := []struct {
+		name  string
+		input input
+		want  want
+	}{
+		{
+			name: "nil request",
+			input: input{
+				req: func() *tokenservice.TokenserviceGenerateNonceRequest {
+					return nil
+				},
+			},
+			want: want{
+				err: "validation errors: request is nil",
+			},
+		},
+		{
+			name: "nil claims",
+			input: input{
+				req: func() *tokenservice.TokenserviceGenerateNonceRequest {
+					return &tokenservice.TokenserviceGenerateNonceRequest{
+						Claims:   nil,
+						NonceTtl: strToPtr("300"),
+					}
+				},
+			},
+			want: want{
+				err: "validation errors: claims errors: claims is nil",
+			},
+		},
+		{
+			name: "nil audience in claims",
+			input: input{
+				req: func() *tokenservice.TokenserviceGenerateNonceRequest {
+					return &tokenservice.TokenserviceGenerateNonceRequest{
+						Claims: &tokenservice.TokenserviceClaims{
+							Aud:    nil,
+							Iss:    strToPtr("issuer"),
+							Jti:    strToPtr("jti"),
+							Sub:    strToPtr("subject"),
+							Scopes: &[]string{"read", "write"},
+							CustomClaims: &map[string]interface{}{
+								"custom_key": "custom_value",
+							},
+						},
+						NonceTtl: strToPtr("300"),
+					}
+				},
+			},
+			want: want{
+				err: "validation errors: claims errors: aud is nil",
+			},
+		},
+		{
+			name: "successful validation",
+			input: input{
+				req: func() *tokenservice.TokenserviceGenerateNonceRequest {
+					return &tokenservice.TokenserviceGenerateNonceRequest{
+						Claims: &tokenservice.TokenserviceClaims{
+							Aud:    strToPtr("audience"),
+							Iss:    strToPtr("issuer"),
+							Jti:    strToPtr("jti"),
+							Sub:    strToPtr("subject"),
+							Scopes: &[]string{"read", "write"},
+							CustomClaims: &map[string]interface{}{
+								"custom_key": "custom_value",
+							},
+						},
+						NonceTtl: strToPtr("300"),
+					}
+				},
+			},
+			want: want{
+				err: "",
+			},
+		},
+	}
 
-// 			_, err := manager.Refresh(context.Background(), tt.input.req)
-// 			if tt.want.err != "" {
-// 				if assert.NotNil(t, err) {
-// 					assert.Contains(t, err.Error(), tt.want.err)
-// 				}
-// 			} else {
-// 				assert.Nil(t, err)
-// 			}
-// 		})
-// 	}
-// }
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateGenerateNonceRequest(tt.input.req())
+			if tt.want.err != "" {
+				if assert.NotNil(t, err) {
+					assert.Contains(t, err.Error(), tt.want.err)
+				}
+			} else {
+				assert.Nil(t, err)
+			}
+		})
+	}
+}
 
-// func TestRevokeUnit(t *testing.T) {
-// 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
+func TestValidateRefreshRequestUnit(t *testing.T) {
+	type input struct {
+		req func() *tokenservice.TokenserviceRefreshRequest
+	}
 
-// 	goldenToken, _ := generateToken(t, privateKey)
+	type want struct {
+		err string
+	}
 
-// 	type input struct {
-// 		req *tokenservice.RevokeRequest
-// 		db  db.Repository
-// 	}
+	cases := []struct {
+		name  string
+		input input
+		want  want
+	}{
+		{
+			name: "nil request",
+			input: input{
+				req: func() *tokenservice.TokenserviceRefreshRequest {
+					return nil
+				},
+			},
+			want: want{
+				err: "validation errors: request is nil",
+			},
+		},
+		{
+			name: "nil access token TTL",
+			input: input{
+				req: func() *tokenservice.TokenserviceRefreshRequest {
+					return &tokenservice.TokenserviceRefreshRequest{
+						AccessTokenTtl:  nil,
+						RefreshToken:    strToPtr("example_refresh_token"),
+						RefreshTokenTtl: strToPtr("86400"),
+						RefreshDpop: &tokenservice.TokenserviceDPoP{
+							Proof: strToPtr("proof"),
+							WantClaims: &tokenservice.TokenserviceDPoPClaims{
+								Htm: strToPtr("POST"),
+								Htu: strToPtr("https://example.com/refresh"),
+								Rh:  strToPtr("example_rh"),
+							},
+						},
+						NewTokenDpop: &tokenservice.TokenserviceDPoP{
+							Proof: strToPtr("proof"),
+							WantClaims: &tokenservice.TokenserviceDPoPClaims{
+								Htm: strToPtr("POST"),
+								Htu: strToPtr("https://example.com/newtoken"),
+								Rh:  strToPtr("example_rh"),
+							},
+						},
+					}
+				},
+			},
+			want: want{
+				err: "validation errors: access token TTL is nil",
+			},
+		},
+		{
+			name: "nil refresh token",
+			input: input{
+				req: func() *tokenservice.TokenserviceRefreshRequest {
+					return &tokenservice.TokenserviceRefreshRequest{
+						AccessTokenTtl:  strToPtr("3600"),
+						RefreshToken:    nil,
+						RefreshTokenTtl: strToPtr("86400"),
+						RefreshDpop: &tokenservice.TokenserviceDPoP{
+							Proof: strToPtr("proof"),
+							WantClaims: &tokenservice.TokenserviceDPoPClaims{
+								Htm: strToPtr("POST"),
+								Htu: strToPtr("https://example.com/refresh"),
+								Rh:  strToPtr("example_rh"),
+							},
+						},
+						NewTokenDpop: &tokenservice.TokenserviceDPoP{
+							Proof: strToPtr("proof"),
+							WantClaims: &tokenservice.TokenserviceDPoPClaims{
+								Htm: strToPtr("POST"),
+								Htu: strToPtr("https://example.com/newtoken"),
+								Rh:  strToPtr("example_rh"),
+							},
+						},
+					}
+				},
+			},
+			want: want{
+				err: "validation errors: refresh token is nil",
+			},
+		},
+		{
+			name: "nil refresh token DPoP",
+			input: input{
+				req: func() *tokenservice.TokenserviceRefreshRequest {
+					return &tokenservice.TokenserviceRefreshRequest{
+						AccessTokenTtl:  strToPtr("3600"),
+						RefreshToken:    strToPtr("example_refresh_token"),
+						RefreshTokenTtl: strToPtr("86400"),
+						RefreshDpop:     nil,
+						NewTokenDpop: &tokenservice.TokenserviceDPoP{
+							Proof: strToPtr("proof"),
+							WantClaims: &tokenservice.TokenserviceDPoPClaims{
+								Htm: strToPtr("POST"),
+								Htu: strToPtr("https://example.com/newtoken"),
+								Rh:  strToPtr("example_rh"),
+							},
+						},
+					}
+				},
+			},
+			want: want{
+				err: "validation errors: refesh token dpop: dpop errors: dpop is nil",
+			},
+		},
+		{
+			name: "successful validation",
+			input: input{
+				req: func() *tokenservice.TokenserviceRefreshRequest {
+					return &tokenservice.TokenserviceRefreshRequest{
+						AccessTokenTtl:  strToPtr("3600"),
+						RefreshToken:    strToPtr("example_refresh_token"),
+						RefreshTokenTtl: strToPtr("86400"),
+						RefreshDpop: &tokenservice.TokenserviceDPoP{
+							Proof: strToPtr("proof"),
+							WantClaims: &tokenservice.TokenserviceDPoPClaims{
+								Htm: strToPtr("POST"),
+								Htu: strToPtr("https://example.com/refresh"),
+								Rh:  strToPtr("example_rh"),
+							},
+						},
+						NewTokenDpop: &tokenservice.TokenserviceDPoP{
+							Proof: strToPtr("proof"),
+							WantClaims: &tokenservice.TokenserviceDPoPClaims{
+								Htm: strToPtr("POST"),
+								Htu: strToPtr("https://example.com/newtoken"),
+								Rh:  strToPtr("example_rh"),
+							},
+						},
+						RequiredScopes: &[]string{"read", "write"},
+					}
+				},
+			},
+			want: want{
+				err: "",
+			},
+		},
+	}
 
-// 	type want struct {
-// 		err string
-// 	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateRefreshRequest(tt.input.req())
+			if tt.want.err != "" {
+				if assert.NotNil(t, err) {
+					assert.Contains(t, err.Error(), tt.want.err)
+				}
+			} else {
+				assert.Nil(t, err)
+			}
+		})
+	}
+}
 
-// 	cases := []struct {
-// 		name  string
-// 		input input
-// 		want  want
-// 	}{
-// 		{
-// 			"handles failure to decode split token",
-// 			input{
-// 				req: &tokenservice.RevokeRequest{
-// 					Token: "garbage",
-// 				},
-// 			},
-// 			want{
-// 				err: "invalid character",
-// 			},
-// 		},
-// 		{
-// 			"handles failure to delete tokens",
-// 			input{
-// 				req: &tokenservice.RevokeRequest{
-// 					Token: goldenToken,
-// 				},
-// 				db: mockdb.Repository{
-// 					TokenRepo: tokensmock.Repository{
-// 						DeleteErr: true,
-// 					},
-// 				},
-// 			},
-// 			want{
-// 				err: tokensmock.DeleteErr,
-// 			},
-// 		},
-// 		{
-// 			"is successful",
-// 			input{
-// 				req: &tokenservice.RevokeRequest{
-// 					Token: goldenToken,
-// 				},
-// 				db: mockdb.Repository{
-// 					TokenRepo: tokensmock.Repository{},
-// 				},
-// 			},
-// 			want{},
-// 		},
-// 	}
+func TestValidateGenerateRequestUnit(t *testing.T) {
+	type input struct {
+		req func() *tokenservice.TokenserviceGenerateRequest
+	}
 
-// 	for _, tt := range cases {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			manager := New(tt.input.db, privateKey)
-// 			_, err := manager.Revoke(context.Background(), tt.input.req)
-// 			if tt.want.err != "" {
-// 				if assert.NotNil(t, err) {
-// 					assert.Contains(t, err.Error(), tt.want.err)
-// 				}
-// 			} else {
-// 				assert.Nil(t, err)
-// 			}
-// 		})
-// 	}
-// }
+	type want struct {
+		err string
+	}
 
-// func generateProofWithBadSignature(t *testing.T) (proof string, thumbprintHash []byte) {
-// 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
-// 	publicKey := keys.SerializePublicKey(&privateKey.PublicKey)
+	cases := []struct {
+		name  string
+		input input
+		want  want
+	}{
+		{
+			name: "nil request",
+			input: input{
+				req: func() *tokenservice.TokenserviceGenerateRequest {
+					return nil
+				},
+			},
+			want: want{
+				err: "validation errors: request is nil",
+			},
+		},
+		{
+			name: "nil claims",
+			input: input{
+				req: func() *tokenservice.TokenserviceGenerateRequest {
+					return &tokenservice.TokenserviceGenerateRequest{
+						Claims:          nil,
+						Dpop:            mockDpop(),
+						AccessTokenTtl:  strToPtr("3600"),
+						RefreshTokenTtl: strToPtr("86400"),
+					}
+				},
+			},
+			want: want{
+				err: "validation errors: claims errors: claims is nil",
+			},
+		},
+		{
+			name: "nil DPoP",
+			input: input{
+				req: func() *tokenservice.TokenserviceGenerateRequest {
+					return &tokenservice.TokenserviceGenerateRequest{
+						Claims:          mockClaims(),
+						Dpop:            nil,
+						AccessTokenTtl:  strToPtr("3600"),
+						RefreshTokenTtl: strToPtr("86400"),
+					}
+				},
+			},
+			want: want{
+				err: "validation errors: dpop errors: dpop is nil",
+			},
+		},
+		{
+			name: "nil access token TTL",
+			input: input{
+				req: func() *tokenservice.TokenserviceGenerateRequest {
+					return &tokenservice.TokenserviceGenerateRequest{
+						Claims:          mockClaims(),
+						Dpop:            mockDpop(),
+						AccessTokenTtl:  nil,
+						RefreshTokenTtl: strToPtr("86400"),
+					}
+				},
+			},
+			want: want{
+				err: "validation errors: access token TTL is nil",
+			},
+		},
+		{
+			name: "nil refresh token TTL",
+			input: input{
+				req: func() *tokenservice.TokenserviceGenerateRequest {
+					return &tokenservice.TokenserviceGenerateRequest{
+						Claims:          mockClaims(),
+						Dpop:            mockDpop(),
+						AccessTokenTtl:  strToPtr("3600"),
+						RefreshTokenTtl: nil,
+					}
+				},
+			},
+			want: want{
+				err: "validation errors: refresh token TTL is nil",
+			},
+		},
+		{
+			name: "successful validation",
+			input: input{
+				req: func() *tokenservice.TokenserviceGenerateRequest {
+					return &tokenservice.TokenserviceGenerateRequest{
+						Claims:          mockClaims(),
+						Dpop:            mockDpop(),
+						AccessTokenTtl:  strToPtr("3600"),
+						RefreshTokenTtl: strToPtr("86400"),
+					}
+				},
+			},
+			want: want{
+				err: "",
+			},
+		},
+	}
 
-// 	privateKey2, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateGenerateRequest(tt.input.req())
+			if tt.want.err != "" {
+				if assert.NotNil(t, err) {
+					assert.Contains(t, err.Error(), tt.want.err)
+				}
+			} else {
+				assert.Nil(t, err)
+			}
+		})
+	}
+}
 
-// 	claims := dpop.Claims{
-// 		Method:       "/some/method",
-// 		MethodDigest: []byte("somedigest"),
-// 		IssuedAt:     time.Now().Unix(),
-// 	}
+func TestValidateDPoPUnit(t *testing.T) {
+	type input struct {
+		dpop func() *tokenservice.TokenserviceDPoP
+	}
 
-// 	v, err := json.Marshal(&claims)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
+	type want struct {
+		err string
+	}
 
-// 	invalidSignature, err := keys.Sign(privateKey2, v)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
+	cases := []struct {
+		name  string
+		input input
+		want  want
+	}{
+		{
+			name: "nil DPoP",
+			input: input{
+				dpop: func() *tokenservice.TokenserviceDPoP {
+					return nil
+				},
+			},
+			want: want{
+				err: "dpop errors: dpop is nil",
+			},
+		},
+		{
+			name: "nil proof",
+			input: input{
+				dpop: func() *tokenservice.TokenserviceDPoP {
+					return &tokenservice.TokenserviceDPoP{
+						Proof:      nil,
+						WantClaims: mockDPoPClaims(),
+						TtlMinutes: strToPtr("10"),
+					}
+				},
+			},
+			want: want{
+				err: "dpop errors: proof is nil",
+			},
+		},
+		{
+			name: "invalid DPoP claims",
+			input: input{
+				dpop: func() *tokenservice.TokenserviceDPoP {
+					return &tokenservice.TokenserviceDPoP{
+						Proof: strToPtr("example_proof"),
+						WantClaims: &tokenservice.TokenserviceDPoPClaims{
+							Htm: nil, // Missing required field
+							Htu: strToPtr("https://example.com"),
+							Rh:  strToPtr("example_rh"),
+						},
+						TtlMinutes: strToPtr("10"),
+					}
+				},
+			},
+			want: want{
+				err: "dpop errors: dpop claim errors: htm is nil",
+			},
+		},
+		{
+			name: "nil TTL",
+			input: input{
+				dpop: func() *tokenservice.TokenserviceDPoP {
+					return &tokenservice.TokenserviceDPoP{
+						Proof:      strToPtr("example_proof"),
+						WantClaims: mockDPoPClaims(),
+						TtlMinutes: nil,
+					}
+				},
+			},
+			want: want{
+				err: "",
+			},
+		},
+		{
+			name: "successful validation",
+			input: input{
+				dpop: func() *tokenservice.TokenserviceDPoP {
+					return &tokenservice.TokenserviceDPoP{
+						Proof:      strToPtr("example_proof"),
+						WantClaims: mockDPoPClaims(),
+						TtlMinutes: strToPtr("10"),
+					}
+				},
+			},
+			want: want{
+				err: "",
+			},
+		},
+	}
 
-// 	dpopProof := dpop.Proof{
-// 		PublicKey: publicKey,
-// 		Claims:    v,
-// 		Signature: invalidSignature,
-// 	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateDPoP(tt.input.dpop())
+			if tt.want.err != "" {
+				if assert.NotNil(t, err) {
+					assert.Contains(t, err.Error(), tt.want.err)
+				}
+			} else {
+				assert.Nil(t, err)
+			}
+		})
+	}
+}
 
-// 	v, err = json.Marshal(&dpopProof)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
+func TestValidateDPoPClaimsUnit(t *testing.T) {
+	type input struct {
+		claims func() *tokenservice.TokenserviceDPoPClaims
+	}
 
-// 	thumbprintHash, err = keys.Sha256Hash(publicKey)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
+	type want struct {
+		err string
+	}
 
-// 	return base64.RawURLEncoding.EncodeToString(v), thumbprintHash
-// }
+	cases := []struct {
+		name  string
+		input input
+		want  want
+	}{
+		{
+			name: "nil claims",
+			input: input{
+				claims: func() *tokenservice.TokenserviceDPoPClaims {
+					return nil
+				},
+			},
+			want: want{
+				err: "dpop claim errors: claims is nil",
+			},
+		},
+		{
+			name: "nil htm",
+			input: input{
+				claims: func() *tokenservice.TokenserviceDPoPClaims {
+					return &tokenservice.TokenserviceDPoPClaims{
+						Htm: nil,
+						Htu: strToPtr("https://example.com"),
+						Rh:  strToPtr("example_rh"),
+					}
+				},
+			},
+			want: want{
+				err: "dpop claim errors: htm is nil",
+			},
+		},
+		{
+			name: "nil htu",
+			input: input{
+				claims: func() *tokenservice.TokenserviceDPoPClaims {
+					return &tokenservice.TokenserviceDPoPClaims{
+						Htm: strToPtr("POST"),
+						Htu: nil,
+						Rh:  strToPtr("example_rh"),
+					}
+				},
+			},
+			want: want{
+				err: "dpop claim errors: htu is nil",
+			},
+		},
+		{
+			name: "nil rh",
+			input: input{
+				claims: func() *tokenservice.TokenserviceDPoPClaims {
+					return &tokenservice.TokenserviceDPoPClaims{
+						Htm: strToPtr("POST"),
+						Htu: strToPtr("https://example.com"),
+						Rh:  nil,
+					}
+				},
+			},
+			want: want{
+				err: "dpop claim errors: rh is nil",
+			},
+		},
+		{
+			name: "all fields nil",
+			input: input{
+				claims: func() *tokenservice.TokenserviceDPoPClaims {
+					return &tokenservice.TokenserviceDPoPClaims{
+						Htm: nil,
+						Htu: nil,
+						Rh:  nil,
+					}
+				},
+			},
+			want: want{
+				err: "dpop claim errors: htm is nil, htu is nil, rh is nil",
+			},
+		},
+		{
+			name: "successful validation",
+			input: input{
+				claims: func() *tokenservice.TokenserviceDPoPClaims {
+					return &tokenservice.TokenserviceDPoPClaims{
+						Htm: strToPtr("POST"),
+						Htu: strToPtr("https://example.com"),
+						Rh:  strToPtr("example_rh"),
+					}
+				},
+			},
+			want: want{
+				err: "",
+			},
+		},
+	}
 
-// func generateProof(t *testing.T) (proof string, thumbprintHash []byte) {
-// 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateDPoPClaims(tt.input.claims())
+			if tt.want.err != "" {
+				if assert.NotNil(t, err) {
+					assert.Contains(t, err.Error(), tt.want.err)
+				}
+			} else {
+				assert.Nil(t, err)
+			}
+		})
+	}
+}
 
-// 	claims := dpop.Claims{
-// 		Method:       "/some/method",
-// 		MethodDigest: []byte("somedigest"),
-// 		IssuedAt:     time.Now().Unix(),
-// 	}
+func mockDPoPClaims() *tokenservice.TokenserviceDPoPClaims {
+	return &tokenservice.TokenserviceDPoPClaims{
+		Htm: strToPtr("POST"),
+		Htu: strToPtr("https://example.com"),
+		Rh:  strToPtr("example_rh"),
+	}
+}
 
-// 	encodedProof, err := dpop.Encode(privateKey, claims)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
+func mockClaims() *tokenservice.TokenserviceClaims {
+	return &tokenservice.TokenserviceClaims{
+		Aud:    strToPtr("audience"),
+		Iss:    strToPtr("issuer"),
+		Jti:    strToPtr("jti"),
+		Sub:    strToPtr("subject"),
+		Scopes: &[]string{"read", "write"},
+		CustomClaims: &map[string]interface{}{
+			"key": "value",
+		},
+	}
+}
 
-// 	thumbprintHash, err = keys.Sha256Hash(keys.SerializePublicKey(&privateKey.PublicKey))
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
+func mockDpop() *tokenservice.TokenserviceDPoP {
+	return &tokenservice.TokenserviceDPoP{
+		Proof: strToPtr("proof"),
+		WantClaims: &tokenservice.TokenserviceDPoPClaims{
+			Htm: strToPtr("POST"),
+			Htu: strToPtr("https://example.com"),
+			Rh:  strToPtr("example_rh"),
+		},
+		TtlMinutes: strToPtr("10"),
+	}
+}
 
-// 	return encodedProof, thumbprintHash
-// }
+func mockGenerateRequest() *tokenservice.TokenserviceGenerateRequest {
+	return &tokenservice.TokenserviceGenerateRequest{
+		Claims: &tokenservice.TokenserviceClaims{
+			Aud:    strToPtr("example_audience"),
+			Iss:    strToPtr("example_issuer"),
+			Jti:    strToPtr("example_jti"),
+			Sub:    strToPtr("example_subject"),
+			Scopes: &[]string{"read", "write"},
+			CustomClaims: &map[string]interface{}{
+				"custom_key": "custom_value",
+			},
+		},
+		Dpop: &tokenservice.TokenserviceDPoP{
+			Proof: strToPtr("example_proof"),
+			WantClaims: &tokenservice.TokenserviceDPoPClaims{
+				Htm: strToPtr(http.MethodPost),
+				Htu: strToPtr("https://example.com/token"),
+				Rh:  strToPtr("test_rh"),
+			},
+			TtlMinutes: strToPtr("5"),
+		},
+		AccessTokenTtl:  strToPtr("3600"),
+		RefreshTokenTtl: strToPtr("86400"),
+	}
+}
 
-// func generateTokenWithBadSignature(t *testing.T) tokens.GenerateToken {
-// 	invalidKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
+func mockRefreshRequest() *tokenservice.TokenserviceRefreshRequest {
+	return &tokenservice.TokenserviceRefreshRequest{
+		AccessTokenTtl:  strToPtr("3600"), // 1 hour
+		RefreshToken:    strToPtr("example_refresh_token"),
+		RefreshTokenTtl: strToPtr("86400"), // 1 day
+		RefreshDpop: &tokenservice.TokenserviceDPoP{
+			Proof: strToPtr("example_refresh_proof"),
+			WantClaims: &tokenservice.TokenserviceDPoPClaims{
+				Htm: strToPtr("POST"),
+				Htu: strToPtr("https://example.com/refresh"),
+				Rh:  strToPtr("example_rh"),
+			},
+			TtlMinutes: strToPtr("10"),
+		},
+		NewTokenDpop: &tokenservice.TokenserviceDPoP{
+			Proof: strToPtr("example_new_proof"),
+			WantClaims: &tokenservice.TokenserviceDPoPClaims{
+				Htm: strToPtr("POST"),
+				Htu: strToPtr("https://example.com/newtoken"),
+				Rh:  strToPtr("example_new_rh"),
+			},
+			TtlMinutes: strToPtr("10"),
+		},
+		RequiredScopes: &[]string{"read", "write", "admin"},
+	}
+}
 
-// 	splitToken := tokens.Token{
-// 		Verifier: []byte("verifier"),
-// 		Selector: []byte("selector"),
-// 		Expiry:   time.Now().Unix(),
-// 	}
-
-// 	invalidSignature, err := keys.Sign(invalidKey, append(splitToken.Selector, splitToken.Verifier...))
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
-// 	splitToken.Signature = invalidSignature
-
-// 	return tokens.GenerateToken{
-// 		Token: splitToken,
-// 	}
-// }
-
-// func generateToken(t *testing.T, privateKey *ecdsa.PrivateKey) (token tokens.GenerateToken, verifierHash []byte) {
-// 	generatedToken, _, err := tokens.Generate(time.Minute, privateKey, nil)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
-
-// 	verifierHash, err = keys.Sha256Hash(generatedToken.Token.Verifier)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
-
-// 	return generatedToken, verifierHash
-// }
-
-// func generateExpiredToken(t *testing.T, privateKey *ecdsa.PrivateKey) (token tokens.GenerateToken, verifierHash []byte) {
-// 	generatedToken, _, err := tokens.Generate(time.Minute*-1, privateKey, nil, "somescope")
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
-
-// 	verifierHash, err = keys.Sha256Hash(generatedToken.Token.Verifier)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
-
-// 	return generatedToken, verifierHash
-// }
-
-// func generateTokenWithThumbprint(t *testing.T, privateKey *ecdsa.PrivateKey) (token tokens.GenerateToken, verifierHash []byte) {
-// 	generatedToken, _, err := tokens.GenerateWithThumbprint(time.Minute, privateKey, []byte("somethumbprint"), nil)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
-
-// 	verifierHash, err = keys.Sha256Hash(generatedToken.Token.Verifier)
-// 	if !assert.Nil(t, err) {
-// 		t.FailNow()
-// 	}
-
-// 	return generatedToken, verifierHash
-// }
+func mockGenerateNonceRequest() *tokenservice.TokenserviceGenerateNonceRequest {
+	return &tokenservice.TokenserviceGenerateNonceRequest{
+		Claims: &tokenservice.TokenserviceClaims{
+			Aud:    strToPtr("example_audience"),
+			Iss:    strToPtr("example_issuer"),
+			Jti:    strToPtr("example_jti"),
+			Sub:    strToPtr("example_subject"),
+			Scopes: &[]string{"read", "write"},
+			CustomClaims: &map[string]interface{}{
+				"custom_key": "custom_value",
+			},
+		},
+		NonceTtl: strToPtr("300"), // 5 minutes
+	}
+}

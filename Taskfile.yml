@@ -9,12 +9,44 @@ tasks:
   generate:
     desc: run all code generators
     cmds: 
-      - task: proto:generate
+      - task: openapi:generate
 
-  proto:generate:
+  openapi:generate:
     summary: Generate proto buffer definitions
     silent: true
     cmds:
       - echo Generating proto buffers...
       - |
-        protoc -I ./protos --go_out=./gen --go-grpc_out=./gen ./protos/v1/*.proto
+        oapi-codegen -config ./openapi.gen.yml ./openapi.yaml
+        mv stubs.gen.go ./gen/go/v1
+
+  configure:sso:
+    desc: Configure AWS SSO credentials
+    cmds:
+      - >
+        aws configure sso 
+        --endpoint-url https://healthaura.awsapps.com/start 
+        --region us-east-1 
+        --profile AWSAdministratorAccess-713881787612
+
+  cf:
+    desc: Package and deploy CloudFormation infrastructure
+    cmds:
+      - task: package:cloudformation
+      - task: deploy:cloudformation
+
+  package:cloudformation:
+    summary: Package CloudFormation Infrastructure
+    silent: true
+    cmds:
+      - echo Packaging CloudFormation Stack...
+      - |
+        aws cloudformation package --template-file ./cloudformation/main.yaml --s3-bucket healthaura-dev-shared-infrastructure --output-template-file ./cloudformation/packaged.yaml --profile AWSAdministratorAccess-713881787612
+
+  deploy:cloudformation:
+    summary: Deploy CloudFormation Infrastructure
+    silent: true
+    cmds:
+      - echo Deploying CloudFormation Stack...
+      - |
+        aws cloudformation deploy --template-file /Users/bricealdrich/Development/github.com/healthaura/token-service/cloudformation/packaged.yaml --stack-name token-service-stack  --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND

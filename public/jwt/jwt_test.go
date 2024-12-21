@@ -14,11 +14,12 @@ import (
 	cjwt "github.com/HealthAura/token-service/public/jwt"
 	"github.com/HealthAura/token-service/public/jwt/tokenstore/tokenstoremock"
 	"github.com/HealthAura/token-service/public/keys"
+	mkms "github.com/HealthAura/token-service/public/keys/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/stretchr/testify/require"
 )
 
-func TestDPoP(t *testing.T) {
+func TestDPoPUnit(t *testing.T) {
 	type input struct {
 		privateKeyFn   func(t *testing.T) *ecdsa.PrivateKey
 		validateVerify func(t *testing.T, tokenServiceKey *ecdsa.PrivateKey, dpopKey *ecdsa.PrivateKey)
@@ -1204,6 +1205,7 @@ func TestDPoP(t *testing.T) {
 }
 
 type mockKMSClient struct {
+	mkms.KMS
 	privateKey *ecdsa.PrivateKey
 }
 

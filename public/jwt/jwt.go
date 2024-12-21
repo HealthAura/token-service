@@ -9,16 +9,11 @@ import (
 	"strings"
 
 	"github.com/HealthAura/token-service/public/jwt/tokenstore"
-	"github.com/aws/aws-sdk-go-v2/service/kms"
 
-	tokenservice "github.com/HealthAura/token-service/gen/token-service.v1"
+	tokenservice "github.com/HealthAura/token-service/gen/go/v1"
+	mkms "github.com/HealthAura/token-service/public/keys/kms"
 	"google.golang.org/protobuf/types/known/structpb"
 )
-
-type kmsClient interface {
-	Sign(ctx context.Context, params *kms.SignInput, optFns ...func(*kms.Options)) (*kms.SignOutput, error)
-	Verify(ctx context.Context, params *kms.VerifyInput, optFns ...func(*kms.Options)) (*kms.VerifyOutput, error)
-}
 
 type Orchestrator interface {
 	GenerateNonce(ctx context.Context, input GenerateNonceInput) (string, error)
@@ -47,17 +42,18 @@ type Claims struct {
 }
 
 type orchestrator struct {
-	kmsClient  kmsClient
+	kmsClient  mkms.KMS
 	keyID      string
 	tokenStore tokenstore.Store
 	issuer     string
 }
 
-func New(kmsClient kmsClient, keyID string, issuer string, tokenStore tokenstore.Store) Orchestrator {
+func New(kmsClient mkms.KMS, keyID string, issuer string, tokenStore tokenstore.Store) Orchestrator {
 	return &orchestrator{
 		keyID:      keyID,
 		tokenStore: tokenStore,
 		issuer:     issuer,
+		kmsClient:  kmsClient,
 	}
 }
 
@@ -94,70 +90,43 @@ func (o orchestrator) RevokeToken(ctx context.Context, input RevokeTokenInput) (
 	return token, o.tokenStore.DeleteToken(ctx, input.Token)
 }
 
-// ProtoClaimsToClaims converts the proto-generated Claims type to the package Claims type
-func ProtoClaimsToClaims(protoClaims *tokenservice.Claims) Claims {
+// APIClaimsToClaims converts the proto-generated Claims type to the package Claims type
+func APIClaimsToClaims(apilaims *tokenservice.TokenserviceClaims) Claims {
 	claims := Claims{
-		Issuer:   protoClaims.Issuer,
-		Subject:  protoClaims.Subject,
-		Audience: protoClaims.Audience,
-		JWTID:    protoClaims.JwtId,
-		Scopes:   protoClaims.Scopes,
+		Issuer:   *apilaims.Iss,
+		Subject:  *apilaims.Sub,
+		Audience: *apilaims.Aud,
+		JWTID:    *apilaims.Jti,
+		Scopes:   *apilaims.Scopes,
 	}
 
-	// Convert custom claims
-	claims.CustomClaims = make(map[string]interface{})
-	for k, v := range protoClaims.CustomClaims {
-		claims.CustomClaims[k] = structpbValueToInterface(v)
+	if apilaims.CustomClaims != nil {
+		claims.CustomClaims = make(map[string]interface{})
+		for k, v := range *apilaims.CustomClaims {
+			claims.CustomClaims[k] = v
+		}
 	}
 
 	return claims
 }
 
-// Helper function to convert structpb.Value to interface{}
-func structpbValueToInterface(value *structpb.Value) interface{} {
-	switch value.Kind.(type) {
-	case *structpb.Value_NullValue:
-		return nil
-	case *structpb.Value_NumberValue:
-		return value.GetNumberValue()
-	case *structpb.Value_StringValue:
-		return value.GetStringValue()
-	case *structpb.Value_BoolValue:
-		return value.GetBoolValue()
-	case *structpb.Value_StructValue:
-		m := make(map[string]interface{})
-		for k, v := range value.GetStructValue().Fields {
-			m[k] = structpbValueToInterface(v)
-		}
-		return m
-	case *structpb.Value_ListValue:
-		list := make([]interface{}, len(value.GetListValue().Values))
-		for i, v := range value.GetListValue().Values {
-			list[i] = structpbValueToInterface(v)
-		}
-		return list
-	default:
-		return nil
-	}
-}
-
-// ClaimsToProtoClaims converts the package Claims type to the proto-generated Claims type
-func ClaimsToProtoClaims(claims Claims) *tokenservice.Claims {
-	protoClaims := &tokenservice.Claims{
-		Issuer:   claims.Issuer,
-		Subject:  claims.Subject,
-		Audience: claims.Audience,
-		JwtId:    claims.JWTID,
-		Scopes:   claims.Scopes,
+// ClaimsToAPIClaims converts the package Claims type to the open API Claims type
+func ClaimsToAPIClaims(claims Claims) *tokenservice.TokenserviceClaims {
+	apiClaims := &tokenservice.TokenserviceClaims{
+		Iss:    &claims.Issuer,
+		Sub:    &claims.Subject,
+		Aud:    &claims.Audience,
+		Jti:    &claims.JWTID,
+		Scopes: &claims.Scopes,
 	}
 
 	// Convert custom claims
-	protoClaims.CustomClaims = make(map[string]*structpb.Value)
+	apiClaims.CustomClaims = &map[string]interface{}{}
 	for k, v := range claims.CustomClaims {
-		protoClaims.CustomClaims[k] = interfaceToStructpbValue(v)
+		(*apiClaims.CustomClaims)[k] = interfaceToStructpbValue(v)
 	}
 
-	return protoClaims
+	return apiClaims
 }
 
 // Helper function to convert interface{} to structpb.Value
