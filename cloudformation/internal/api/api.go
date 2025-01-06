@@ -32,6 +32,13 @@ func NewAPIGatewayStack(scope constructs.Construct, id string, props *APIGateway
 		CloudWatchRole:              jsii.Bool(true),
 		CloudWatchRoleRemovalPolicy: awscdk.RemovalPolicy_RETAIN,
 		Deploy:                      jsii.Bool(true),
+		DeployOptions: &awsapigateway.StageOptions{
+			StageName:        jsii.String("prod"),
+			DataTraceEnabled: jsii.Bool(true),
+			LoggingLevel:     awsapigateway.MethodLoggingLevel_INFO,
+			MetricsEnabled:   jsii.Bool(true),
+			TracingEnabled:   jsii.Bool(true),
+		},
 		Policy: awsiam.NewPolicyDocument(&awsiam.PolicyDocumentProps{
 			Statements: &[]awsiam.PolicyStatement{
 				awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
