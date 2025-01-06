@@ -1,0 +1,6 @@
+package: v1
+output: stubs.gen.go
+generate:
+  models: true
+  client: true
+  chi-server: true

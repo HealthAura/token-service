@@ -1,13 +1,11 @@
 package logging
 
 import (
-	"context"
+	"net/http"
+	"time"
 
-	"github.com/HealthAura/token-service/internal/metadata"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type Middleware struct {
@@ -20,31 +18,37 @@ func New(log *zap.Logger) Middleware {
 	}
 }
 
-func (m Middleware) Middleware(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-	md := metadata.Get(ctx)
-	m.log.With(
-		zap.String("method", info.FullMethod),
-		zap.String("user-agent", md.UserAgent),
-		zap.String("x-correlation-id", md.CorrelationID),
-	).Info("Received incoming request.")
+// HTTPMiddleware adapts the gRPC middleware to work with HTTP requests
+func (m Middleware) HTTPMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
 
-	resp, err := handler(ctx, req)
-	if err != nil {
+		// Extract relevant metadata (you might want to parse custom headers)
+		correlationID := r.Header.Get("X-Correlation-ID")
+		userAgent := r.Header.Get("User-Agent")
+		method := r.Method
+		path := r.URL.Path
+
+		if correlationID == "" {
+			correlationID = uuid.NewString()
+		}
+
 		m.log.With(
-			zap.String("method", info.FullMethod),
-			zap.Error(err),
-			zap.String("user-agent", md.UserAgent),
-			zap.String("x-correlation-id", md.CorrelationID),
-		).Info("Error processing incoming request.")
+			zap.String("method", method),
+			zap.String("path", path),
+			zap.String("user-agent", userAgent),
+			zap.String("x-correlation-id", correlationID),
+		).Info("Received incoming request")
 
-		return resp, status.Errorf(codes.Internal, "an issue occured with the correlation id '%s'", md.CorrelationID)
-	}
+		// Call the next middleware/handler in the chain
+		next.ServeHTTP(w, r)
 
-	m.log.With(
-		zap.String("method", info.FullMethod),
-		zap.String("user-agent", md.UserAgent),
-		zap.String("x-correlation-id", md.CorrelationID),
-	).Info("Processed incoming request.")
-
-	return resp, nil
+		m.log.With(
+			zap.String("method", method),
+			zap.String("path", path),
+			zap.String("user-agent", userAgent),
+			zap.String("x-correlation-id", correlationID),
+			zap.Duration("latency", time.Since(start)),
+		).Info("Processed incoming request")
+	})
 }

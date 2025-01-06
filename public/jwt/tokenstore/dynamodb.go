@@ -12,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"github.com/aws/aws-sdk-go-v2/service/kms"
 )
 
 type TokenItem struct {
@@ -24,17 +23,13 @@ type TokenItem struct {
 
 type dynamoStore struct {
 	dynamoClient *dynamodb.Client
-	kmsClient    *kms.Client
 	tableName    string
-	keyID        string
 }
 
-func NewDynamo(dynamoClient *dynamodb.Client, kmsClient *kms.Client, tableName string, keyID string) Store {
+func New(dynamoClient *dynamodb.Client, tableName string) Store {
 	return dynamoStore{
 		dynamoClient: dynamoClient,
-		kmsClient:    kmsClient,
 		tableName:    tableName,
-		keyID:        keyID,
 	}
 }
 
@@ -51,22 +46,9 @@ func (s dynamoStore) StoreToken(ctx context.Context, jwtToken string, ttl time.D
 		return fmt.Errorf("failed to hash signature: %w", err)
 	}
 
-	cipherText := []byte(tokenWithoutSignature)
-	encryptInput := &kms.EncryptInput{
-		KeyId:     &s.keyID,
-		Plaintext: []byte(tokenWithoutSignature),
-	}
-
-	encResp, err := s.kmsClient.Encrypt(ctx, encryptInput)
-	if err != nil {
-		return fmt.Errorf("failed to encrypt token data: %w", err)
-	}
-
-	cipherText = encResp.CiphertextBlob
-
 	item := TokenItem{
 		SignatureHash: base64.RawURLEncoding.EncodeToString(signatureHash),
-		TokenData:     cipherText,
+		TokenData:     []byte(tokenWithoutSignature),
 		ExpiresAt:     time.Now().Add(ttl).Unix(),
 	}
 
@@ -122,16 +104,7 @@ func (s dynamoStore) GetToken(ctx context.Context, signature string) (string, er
 		return "", NotFoundErr{}
 	}
 
-	decryptInput := &kms.DecryptInput{
-		CiphertextBlob: item.TokenData,
-	}
-
-	decResp, err := s.kmsClient.Decrypt(ctx, decryptInput)
-	if err != nil {
-		return "", fmt.Errorf("failed to decrypt token data: %w", err)
-	}
-
-	splitToken := string(decResp.Plaintext)
+	splitToken := string(item.TokenData)
 
 	return fmt.Sprintf("%s.%s", splitToken, signature), nil
 }
