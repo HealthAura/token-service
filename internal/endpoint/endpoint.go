@@ -80,8 +80,8 @@ func (t TokenServiceServer) TokenServiceGenerateNonce(w http.ResponseWriter, r *
 
 	resp, err := t.tokenManager.GenerateNonce(r.Context(), &req)
 	if err != nil {
-		t.zlog.Error("failed to generate token", zap.Error(err))
-		http.Error(w, "failed to generate token", http.StatusInternalServerError)
+		t.zlog.Error("failed to generate nonce", zap.Error(err))
+		http.Error(w, "failed to generate nonce", http.StatusInternalServerError)
 		return
 	}
 
@@ -119,8 +119,8 @@ func (t TokenServiceServer) TokenServiceRefresh(w http.ResponseWriter, r *http.R
 
 	resp, err := t.tokenManager.Refresh(r.Context(), &req)
 	if err != nil {
-		t.zlog.Error("failed to generate token", zap.Error(err))
-		http.Error(w, "failed to generate token", http.StatusInternalServerError)
+		t.zlog.Error("failed to refresh token", zap.Error(err))
+		http.Error(w, "failed to refresh token", http.StatusInternalServerError)
 		return
 	}
 

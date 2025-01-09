@@ -11,6 +11,14 @@ tasks:
     cmds: 
       - task: openapi:generate
 
+  ent:generate:
+    summary: Generate ent database code from the schema definitions
+    silent: true
+    cmds:
+      - echo Generating ent schema...
+      - |
+        go generate ./entgenerator
+
   openapi:generate:
     summary: Generate proto buffer definitions
     silent: true
@@ -19,15 +27,6 @@ tasks:
       - |
         oapi-codegen -config ./openapi.gen.yml ./openapi.yaml
         mv stubs.gen.go ./gen/go/v1
-
-  configure:sso:
-    desc: Configure AWS SSO credentials
-    cmds:
-      - >
-        aws configure sso 
-        --endpoint-url https://healthaura.awsapps.com/start 
-        --region us-east-1 
-        --profile AWSAdministratorAccess-713881787612
 
   cf:
     desc: Package and deploy CloudFormation infrastructure

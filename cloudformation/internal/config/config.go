@@ -2,13 +2,13 @@ package config
 
 import (
 	"log"
-	"os"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsec2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
+	"github.com/caarlos0/env/v6"
 )
 
 const (
@@ -27,12 +27,15 @@ const (
 )
 
 type Config struct {
-	Account       string
-	Environment   Environment
-	VPC           awsec2.IVpc
-	LambdaBucket  awss3.IBucket
-	LambdaCodeKey string
-	StackProps    *awscdk.StackProps
+	Account         string      `env:"AWS_ACCOUNT"`
+	Environment     Environment `env:"ENVIRONMENT" envDefault:"dev"`
+	Region          string      `env:"AWS_REGION" envDefault:"us-east-1"`
+	LambdaCodeS3Key string      `env:"LAMBDA_CODE_S3_KEY" envDefault:"deployment.zip"`
+	VPCID           string      `env:"VPC_ID"`
+
+	VPC          awsec2.IVpc
+	LambdaBucket awss3.IBucket
+	StackProps   *awscdk.StackProps
 }
 
 var (
@@ -40,27 +43,9 @@ var (
 )
 
 func LoadConfig(scope constructs.Construct) {
-	env := os.Getenv("ENVIRONMENT")
-	s3Key := os.Getenv("LAMBDA_CODE_S3_KEY")
-	if s3Key == "" {
-		s3Key = "deployment.zip"
-	}
-
-	var environment Environment
-	var account string
-
-	switch env {
-	case "dev":
-		environment = Dev
-		account = AWSDevelopmentAccount
-	case "qa":
-		environment = QA
-		account = AWSQAAccount
-	case "prod":
-		environment = Prod
-		account = AWSProdAccount
-	default:
-		log.Fatalf("failed to initialize environment: %s", env)
+	cfg := Config{}
+	if err := env.Parse(&cfg); err != nil {
+		log.Fatalf("failed to load environment: %s", err.Error())
 	}
 
 	envVariables := &awscdk.Environment{
@@ -75,18 +60,14 @@ func LoadConfig(scope constructs.Construct) {
 	stack := awscdk.NewStack(scope, jsii.String("TokenServiceConfigStack"), stackProps)
 
 	vpc := awsec2.Vpc_FromLookup(stack, jsii.String("ImportedVPC"), &awsec2.VpcLookupOptions{
-		VpcId: jsii.String("vpc-06157f5d2b53bc3d5"),
+		VpcId: jsii.String(cfg.VPCID),
 	})
 
-	lambdaBucketARN := awscdk.Fn_ImportValue(jsii.String("healthaura-" + string(environment) + "-LambdaFunctionsBucketArn"))
+	lambdaBucketARN := awscdk.Fn_ImportValue(jsii.String("healthaura-" + string(cfg.Environment) + "-LambdaFunctionsBucketArn"))
 	lambdaBucket := awss3.Bucket_FromBucketArn(stack, jsii.String("LambdaFunctionsS3"), lambdaBucketARN)
 
-	Cfg = &Config{
-		Account:       account,
-		Environment:   environment,
-		VPC:           vpc,
-		LambdaBucket:  lambdaBucket,
-		LambdaCodeKey: s3Key,
-		StackProps:    stackProps,
-	}
+	cfg.VPC = vpc
+	cfg.LambdaBucket = lambdaBucket
+	cfg.StackProps = stackProps
+	Cfg = &cfg
 }

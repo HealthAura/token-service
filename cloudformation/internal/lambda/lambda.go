@@ -81,7 +81,7 @@ func NewLambdaStack(scope constructs.Construct, id string, props *LambdaStackPro
 	tokenService := awslambda.NewFunction(stack, jsii.String("TokenService"), &awslambda.FunctionProps{
 		Runtime:    awslambda.Runtime_PROVIDED_AL2(),
 		Handler:    jsii.String("bootstrap"),
-		Code:       awslambda.Code_FromBucket(config.Cfg.LambdaBucket, jsii.String(config.Cfg.LambdaCodeKey), nil),
+		Code:       awslambda.Code_FromBucket(config.Cfg.LambdaBucket, jsii.String(config.Cfg.LambdaCodeS3Key), nil),
 		MemorySize: jsii.Number(256),
 		Timeout:    awscdk.Duration_Seconds(jsii.Number(30)),
 		Tracing:    awslambda.Tracing_ACTIVE,

@@ -6,6 +6,7 @@ require (
 	github.com/aws/aws-cdk-go/awscdk/v2 v2.173.4
 	github.com/aws/constructs-go/constructs/v10 v10.4.2
 	github.com/aws/jsii-runtime-go v1.106.0
+	github.com/caarlos0/env/v6 v6.10.1
 )
 
 require (

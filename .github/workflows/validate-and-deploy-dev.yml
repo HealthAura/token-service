@@ -66,7 +66,7 @@ jobs:
 
       - name: Upload to S3
         run: |
-          aws s3 cp deployment.zip s3://healthaura-dev-lambda-code-bucket/deployment-${{ github.sha }}.zip
+          aws s3 cp deployment.zip s3://${{ secrets.LAMBDA_BUCKET }}/deployment-${{ github.sha }}.zip
         env:
           AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
 
@@ -98,13 +98,18 @@ jobs:
 
       - name: CDK Synth
         run: |
-            export ENVIRONMENT=dev
+            export ENVIRONMENT=${{ vars.ENVIRONMENT }}
+            export AWS_ACCOUNT=${{ secrets.AWS_ACCOUNT_ID }}
+            export VPC_ID=${{ secrets.VPC_ID }}
+            export LAMBDA_CODE_S3_KEY=${{ needs.build-and-pkg-lambda.outputs.s3_key }}
             cd cloudformation
             cdk synth
 
       - name: Deploy to AWS
         run: |
-            export ENVIRONMENT=dev
+            export ENVIRONMENT=${{ vars.ENVIRONMENT }}
+            export AWS_ACCOUNT=${{ secrets.AWS_ACCOUNT_ID }}
+            export VPC_ID=${{ secrets.VPC_ID }}
             export LAMBDA_CODE_S3_KEY=${{ needs.build-and-pkg-lambda.outputs.s3_key }}
             cd cloudformation
             cdk deploy --all --require-approval=never
@@ -124,5 +129,5 @@ jobs:
 
       - name: Run tests
         run: |
-            export TOKEN_SERVICE_URL=https://4d68ugc0vf.execute-api.us-east-1.amazonaws.com/prod
+            export TOKEN_SERVICE_URL=${{ secrets.TOKEN_SERVICE_URL }}
             go test -count=1 -v --run=Integration ./...
