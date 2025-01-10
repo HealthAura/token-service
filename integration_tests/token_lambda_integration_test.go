@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	openapi "github.com/HealthAura/token-service/client"
 	tokenservice "github.com/HealthAura/token-service/gen/go/v1"
 	"github.com/HealthAura/token-service/public/jwt"
 	"github.com/HealthAura/token-service/public/keys"
@@ -23,13 +22,13 @@ import (
 )
 
 type lamdaPreflight struct {
-	client  openapi.Client
+	client  tokenservice.Client
 	dpopKey *ecdsa.PrivateKey
 }
 
 func newLambdaClient(t *testing.T) lamdaPreflight {
 	clientURL := os.Getenv("TOKEN_SERVICE_URL")
-	client, err := openapi.NewClient(clientURL)
+	client, err := tokenservice.NewClient(clientURL)
 	require.Empty(t, err)
 
 	dpopKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -56,8 +55,8 @@ func TestTokenLambdaIntegration(t *testing.T) {
 			"successfully generates token",
 			input{
 				testFn: func(t *testing.T) {
-					r := openapi.TokenServiceGenerateJSONRequestBody{
-						Claims: &openapi.TokenserviceClaims{
+					r := tokenservice.TokenServiceGenerateJSONRequestBody{
+						Claims: &tokenservice.TokenserviceClaims{
 							Aud:    strToPtr("test-audience"),
 							Scopes: &[]string{"test-scope"},
 							Iss:    strToPtr("test-issuer"),
@@ -66,9 +65,9 @@ func TestTokenLambdaIntegration(t *testing.T) {
 						},
 						AccessTokenTtl:  strToPtr("5"),
 						RefreshTokenTtl: strToPtr("60"),
-						Dpop: &openapi.TokenserviceDPoP{
+						Dpop: &tokenservice.TokenserviceDPoP{
 							Proof: strToPtr(setupDPoPUnboundLambda(t, preflight)),
-							WantClaims: &openapi.TokenserviceDPoPClaims{
+							WantClaims: &tokenservice.TokenserviceDPoPClaims{
 								Htm: strToPtr("POST"),
 								Htu: strToPtr("https://example.com/token"),
 								Rh:  strToPtr("test-rh"),
@@ -94,8 +93,8 @@ func TestTokenLambdaIntegration(t *testing.T) {
 			"successfully refreshes token",
 			input{
 				testFn: func(t *testing.T) {
-					r := openapi.TokenServiceGenerateJSONRequestBody{
-						Claims: &openapi.TokenserviceClaims{
+					r := tokenservice.TokenServiceGenerateJSONRequestBody{
+						Claims: &tokenservice.TokenserviceClaims{
 							Aud:    strToPtr("test-audience"),
 							Scopes: &[]string{"test-scope"},
 							Iss:    strToPtr("test-issuer"),
@@ -104,9 +103,9 @@ func TestTokenLambdaIntegration(t *testing.T) {
 						},
 						AccessTokenTtl:  strToPtr("5"),
 						RefreshTokenTtl: strToPtr("60"),
-						Dpop: &openapi.TokenserviceDPoP{
+						Dpop: &tokenservice.TokenserviceDPoP{
 							Proof: strToPtr(setupDPoPUnboundLambda(t, preflight)),
-							WantClaims: &openapi.TokenserviceDPoPClaims{
+							WantClaims: &tokenservice.TokenserviceDPoPClaims{
 								Htm: strToPtr("POST"),
 								Htu: strToPtr("https://example.com/token"),
 								Rh:  strToPtr("test-rh"),
@@ -122,26 +121,26 @@ func TestTokenLambdaIntegration(t *testing.T) {
 					v, err := io.ReadAll(resp.Body)
 					require.Empty(t, err)
 
-					var genResp openapi.TokenserviceGenerateResponse
+					var genResp tokenservice.TokenserviceGenerateResponse
 					err = json.Unmarshal(v, &genResp)
 					require.Empty(t, err)
 
-					refreshR := openapi.TokenserviceRefreshRequest{
+					refreshR := tokenservice.TokenserviceRefreshRequest{
 						AccessTokenTtl:  strToPtr("5"),
 						RefreshTokenTtl: strToPtr("60"),
 						RefreshToken:    genResp.RefreshToken,
-						RefreshDpop: &openapi.TokenserviceDPoP{
+						RefreshDpop: &tokenservice.TokenserviceDPoP{
 							Proof: strToPtr(setupDPoPBoundLambda(t, preflight, *genResp.AccessToken)),
-							WantClaims: &openapi.TokenserviceDPoPClaims{
+							WantClaims: &tokenservice.TokenserviceDPoPClaims{
 								Htm: strToPtr("POST"),
 								Htu: strToPtr("https://example.com/token"),
 								Rh:  strToPtr("test-rh"),
 							},
 							TtlMinutes: strToPtr("1"),
 						},
-						NewTokenDpop: &openapi.TokenserviceDPoP{
+						NewTokenDpop: &tokenservice.TokenserviceDPoP{
 							Proof: strToPtr(setupDPoPUnboundLambda(t, preflight)),
-							WantClaims: &openapi.TokenserviceDPoPClaims{
+							WantClaims: &tokenservice.TokenserviceDPoPClaims{
 								Htm: strToPtr("POST"),
 								Htu: strToPtr("https://example.com/token"),
 								Rh:  strToPtr("test-rh"),
@@ -166,8 +165,8 @@ func TestTokenLambdaIntegration(t *testing.T) {
 }
 
 func setupDPoPUnboundLambda(t *testing.T, preflight lamdaPreflight) string {
-	r := openapi.TokenServiceGenerateNonceJSONRequestBody{
-		Claims: &openapi.TokenserviceClaims{
+	r := tokenservice.TokenServiceGenerateNonceJSONRequestBody{
+		Claims: &tokenservice.TokenserviceClaims{
 			Aud:    strToPtr("test-audience"),
 			Scopes: &[]string{"dpopnonce"},
 			Iss:    strToPtr("test-issuer"),
@@ -184,7 +183,7 @@ func setupDPoPUnboundLambda(t *testing.T, preflight lamdaPreflight) string {
 	v, err := io.ReadAll(resp.Body)
 	require.Empty(t, err)
 
-	var nonceResp openapi.TokenserviceGenerateNonceResponse
+	var nonceResp tokenservice.TokenserviceGenerateNonceResponse
 	err = json.Unmarshal(v, &nonceResp)
 	require.Empty(t, err)
 
@@ -203,8 +202,8 @@ func setupDPoPUnboundLambda(t *testing.T, preflight lamdaPreflight) string {
 }
 
 func setupDPoPBoundLambda(t *testing.T, preflight lamdaPreflight, accessToken string) string {
-	r := openapi.TokenServiceGenerateNonceJSONRequestBody{
-		Claims: &openapi.TokenserviceClaims{
+	r := tokenservice.TokenServiceGenerateNonceJSONRequestBody{
+		Claims: &tokenservice.TokenserviceClaims{
 			Aud:    strToPtr("test-audience"),
 			Scopes: &[]string{"dpopnonce"},
 			Iss:    strToPtr("test-issuer"),
@@ -221,7 +220,7 @@ func setupDPoPBoundLambda(t *testing.T, preflight lamdaPreflight, accessToken st
 	v, err := io.ReadAll(resp.Body)
 	require.Empty(t, err)
 
-	var nonceResp openapi.TokenserviceGenerateNonceResponse
+	var nonceResp tokenservice.TokenserviceGenerateNonceResponse
 	err = json.Unmarshal(v, &nonceResp)
 	require.Empty(t, err)
 
