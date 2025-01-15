@@ -7,7 +7,6 @@ import (
 	"github.com/HealthAura/token-service/cloudformation/internal/config"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigateway"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awsec2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
 	"github.com/aws/constructs-go/constructs/v10"
@@ -60,15 +59,6 @@ func NewAPIGatewayStack(scope constructs.Construct, id string, props *APIGateway
 		}),
 	})
 
-	// Add a VPC endpoint for private communication
-	endpoint := awsec2.NewInterfaceVpcEndpoint(stack, jsii.String("ApiGatewayVpcEndpoint"), &awsec2.InterfaceVpcEndpointProps{
-		Vpc:               config.Cfg.VPC,
-		Open:              jsii.Bool(true),
-		Service:           awsec2.InterfaceVpcEndpointAwsService_APIGATEWAY(),
-		PrivateDnsEnabled: jsii.Bool(true), // Enable private DNS
-
-	})
-
 	tokenServiceIntegration := awsapigateway.NewLambdaIntegration(props.TokenService, &awsapigateway.LambdaIntegrationOptions{})
 
 	routes := []struct {
@@ -104,12 +94,6 @@ func NewAPIGatewayStack(scope constructs.Construct, id string, props *APIGateway
 	awscdk.NewCfnOutput(stack, jsii.String("TokenServiceApiEndpoint"), &awscdk.CfnOutputProps{
 		Value:      api.Url(),
 		ExportName: jsii.String("healthaura-" + string(config.Cfg.Environment) + "-TokenServiceApiEndpoint"),
-	})
-
-	endpointDns := awscdk.Fn_Select(jsii.Number(0), endpoint.VpcEndpointDnsEntries())
-	awscdk.NewCfnOutput(stack, jsii.String("VpcEndpointUrl"), &awscdk.CfnOutputProps{
-		Value:      endpointDns,
-		ExportName: jsii.String("healthaura-" + string(config.Cfg.Environment) + "-TokenServiceVpcEndpointUrl"),
 	})
 
 	return stack

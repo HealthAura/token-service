@@ -12,14 +12,13 @@ func main() {
 	app := awscdk.NewApp(&awscdk.AppProps{})
 	config.LoadConfig(app)
 
-	// Create dynamo db stack
-	dynamoStack := dynamo.NewLambdaDynamoDBStack(app, "DynamoDBStack")
+	dynamoStack := dynamo.NewLambdaDynamoDBStack(app, "TokenServiceDynamoDBStack")
 
-	lambdaStack := lambda.NewLambdaStack(app, "LambdaStack", &lambda.LambdaStackProps{
+	lambdaStack := lambda.NewLambdaStack(app, "TokenServiceLambdaStack", &lambda.LambdaStackProps{
 		TokenTable: dynamoStack.TokenTable(),
 	})
 
-	api.NewAPIGatewayStack(app, "APIGatewayStack", &api.APIGatewayStackProps{
+	api.NewAPIGatewayStack(app, "TokenServiceAPIGatewayStack", &api.APIGatewayStackProps{
 		TokenService: lambdaStack.TokenService(),
 	})
 
