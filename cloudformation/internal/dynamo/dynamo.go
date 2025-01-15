@@ -22,20 +22,17 @@ type lambdaDynamoDBStackOutputs struct {
 func NewLambdaDynamoDBStack(scope constructs.Construct, id string) *LambdaDynamoDBStack {
 	stack := awscdk.NewStack(scope, &id, config.Cfg.StackProps)
 
-	// KMS Key for DynamoDB table encryption
 	tokenTableKey := awskms.NewKey(stack, jsii.String("TokenTableKey"), &awskms.KeyProps{
 		Description:       jsii.String("Customer managed key for token table encryption"),
 		EnableKeyRotation: jsii.Bool(true),
 		Policy:            createKmsKeyPolicy(),
 	})
 
-	// KMS Alias for the key
 	awskms.NewAlias(stack, jsii.String("TokenTableKeyAlias"), &awskms.AliasProps{
 		AliasName: jsii.String("alias/" + string(config.Cfg.Environment) + "-token-table-key"),
 		TargetKey: tokenTableKey,
 	})
 
-	// DynamoDB Table
 	tokenTable := awsdynamodb.NewTable(stack, jsii.String("TokenTable"), &awsdynamodb.TableProps{
 		TableName:           jsii.String(string(config.Cfg.Environment) + "-tokens"),
 		BillingMode:         awsdynamodb.BillingMode_PAY_PER_REQUEST,

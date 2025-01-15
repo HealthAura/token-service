@@ -28,7 +28,6 @@ type lambdaStackOutputs struct {
 func NewLambdaStack(scope constructs.Construct, id string, props *LambdaStackProps) *LambdaStack {
 	stack := awscdk.NewStack(scope, &id, config.Cfg.StackProps)
 
-	// Create a KMS Key for Signing Tokens
 	signingKey := awskms.NewKey(stack, jsii.String("TokenSigningKey"), &awskms.KeyProps{
 		Description: jsii.String("KMS Key for signing JWT tokens"),
 		KeySpec:     awskms.KeySpec_ECC_NIST_P256,
@@ -40,7 +39,6 @@ func NewLambdaStack(scope constructs.Construct, id string, props *LambdaStackPro
 		TargetKey: signingKey,
 	})
 
-	// Grant the Lambda function access to use the signing key
 	lambdaRole := awsiam.NewRole(stack, jsii.String("LambdaExecutionRole"), &awsiam.RoleProps{
 		AssumedBy: awsiam.NewServicePrincipal(jsii.String("lambda.amazonaws.com"), nil),
 		ManagedPolicies: &[]awsiam.IManagedPolicy{
@@ -64,7 +62,6 @@ func NewLambdaStack(scope constructs.Construct, id string, props *LambdaStackPro
 		Resources: jsii.Strings(*signingKey.KeyArn()),
 	}))
 
-	// Lambda Function
 	tokenService := awslambda.NewFunction(stack, jsii.String("TokenService"), &awslambda.FunctionProps{
 		Runtime:    awslambda.Runtime_PROVIDED_AL2(),
 		Handler:    jsii.String("bootstrap"),
@@ -84,7 +81,6 @@ func NewLambdaStack(scope constructs.Construct, id string, props *LambdaStackPro
 		},
 	})
 
-	// Outputs
 	awscdk.NewCfnOutput(stack, jsii.String("TokenServiceSigningKeyARN"), &awscdk.CfnOutputProps{
 		Value:      signingKey.KeyArn(),
 		ExportName: jsii.String("healthaura-" + string(config.Cfg.Environment) + "-TokenServiceSigningKeyARN"),
