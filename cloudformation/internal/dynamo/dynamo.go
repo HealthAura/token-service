@@ -4,7 +4,6 @@ import (
 	"github.com/HealthAura/token-service/cloudformation/internal/config"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awsec2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awskms"
 	"github.com/aws/constructs-go/constructs/v10"
@@ -22,13 +21,6 @@ type lambdaDynamoDBStackOutputs struct {
 
 func NewLambdaDynamoDBStack(scope constructs.Construct, id string) *LambdaDynamoDBStack {
 	stack := awscdk.NewStack(scope, &id, config.Cfg.StackProps)
-
-	// Add a DynamoDB Gateway VPC Endpoint
-	awsec2.NewGatewayVpcEndpoint(stack, jsii.String("DynamoDBEndpoint"), &awsec2.GatewayVpcEndpointProps{
-		Service: awsec2.GatewayVpcEndpointAwsService_DYNAMODB(),
-		Vpc:     config.Cfg.VPC,
-		Subnets: &[]*awsec2.SubnetSelection{{SubnetType: awsec2.SubnetType_PRIVATE_ISOLATED}},
-	})
 
 	// KMS Key for DynamoDB table encryption
 	tokenTableKey := awskms.NewKey(stack, jsii.String("TokenTableKey"), &awskms.KeyProps{

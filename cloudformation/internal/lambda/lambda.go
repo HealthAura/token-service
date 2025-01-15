@@ -28,19 +28,6 @@ type lambdaStackOutputs struct {
 func NewLambdaStack(scope constructs.Construct, id string, props *LambdaStackProps) *LambdaStack {
 	stack := awscdk.NewStack(scope, &id, config.Cfg.StackProps)
 
-	awsec2.NewInterfaceVpcEndpoint(stack, jsii.String("KmsVpcEndpoint"), &awsec2.InterfaceVpcEndpointProps{
-		Vpc:     config.Cfg.VPC,
-		Service: awsec2.InterfaceVpcEndpointAwsService_KMS(),
-		Subnets: &awsec2.SubnetSelection{
-			SubnetType: awsec2.SubnetType_PRIVATE_ISOLATED,
-		},
-		SecurityGroups: &[]awsec2.ISecurityGroup{
-			awsec2.NewSecurityGroup(stack, jsii.String("KmsEndpointSG"), &awsec2.SecurityGroupProps{
-				Vpc: config.Cfg.VPC,
-			}),
-		},
-	})
-
 	// Create a KMS Key for Signing Tokens
 	signingKey := awskms.NewKey(stack, jsii.String("TokenSigningKey"), &awskms.KeyProps{
 		Description: jsii.String("KMS Key for signing JWT tokens"),
