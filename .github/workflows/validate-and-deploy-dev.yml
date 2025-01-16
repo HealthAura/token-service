@@ -12,7 +12,7 @@ env:
 jobs:
   quality-check:
     name: Code Quality Checks
-    runs-on: [self-hosted, dev] 
+    runs-on: [self-hosted] 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
 
   unit-test:
     name: Code Unit Tests
-    runs-on: [self-hosted, dev] 
+    runs-on: [self-hosted] 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -47,7 +47,7 @@ jobs:
 
   build-and-pkg-lambda:
     name: Build and Upload to S3
-    runs-on: [self-hosted, dev] 
+    runs-on: [self-hosted] 
     needs: [quality-check, unit-test]
     outputs:
       s3_key: ${{ steps.set-s3-key.outputs.s3_key }}
@@ -75,7 +75,7 @@ jobs:
         run: echo "::set-output name=s3_key::deployment-${{ github.sha }}.zip"
 
   deploy-infrastructure:
-    runs-on: [self-hosted, dev] 
+    runs-on: [self-hosted] 
     needs: [build-and-pkg-lambda]
     name: Deploy CDK
     steps:
@@ -117,7 +117,7 @@ jobs:
   integration-test:
     name: Code Integration Tests
     needs: [deploy-infrastructure]
-    runs-on: [self-hosted, dev] 
+    runs-on: [self-hosted] 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
