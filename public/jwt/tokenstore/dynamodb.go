@@ -61,7 +61,6 @@ func (s dynamoStore) StoreToken(ctx context.Context, jwtToken string, ttl time.D
 		TableName: aws.String(s.tableName),
 		Item:      av,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to store token in dynamodb: %w", err)
 	}

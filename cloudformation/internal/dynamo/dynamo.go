@@ -42,6 +42,16 @@ func NewLambdaDynamoDBStack(scope constructs.Construct, id string) *LambdaDynamo
 		EncryptionKey:       tokenTableKey,
 	})
 
+	awscdk.NewCfnOutput(stack, jsii.String("TokenTableName"), &awscdk.CfnOutputProps{
+		Value:      tokenTable.TableName(),
+		ExportName: jsii.String(string(config.Cfg.Environment) + "-token-table-name"),
+	})
+
+	awscdk.NewCfnOutput(stack, jsii.String("TokenTableArn"), &awscdk.CfnOutputProps{
+		Value:      tokenTable.TableArn(),
+		ExportName: jsii.String(string(config.Cfg.Environment) + "-token-table-arn"),
+	})
+
 	return &LambdaDynamoDBStack{
 		stack: stack,
 		outputs: lambdaDynamoDBStackOutputs{
