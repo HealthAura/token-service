@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// GenerateNonceInput -
 type GenerateNonceInput struct {
 	Claims Claims
 }
