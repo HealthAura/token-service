@@ -16,7 +16,6 @@ import (
 
 	"github.com/HealthAura/token-service/public/keys"
 	"github.com/golang-jwt/jwt/v4"
-	"google.golang.org/protobuf/proto"
 )
 
 func (o orchestrator) validateVerifyUnboundProof(ctx context.Context, proof, expectedHTM, expectedHTU, expectedRH string, ttl time.Duration) error {
@@ -253,6 +252,7 @@ func validateIATClaim(iat int64, ttl time.Duration) error {
 }
 
 func validateATHClaim(ath string, token string) error {
+
 	if token != "" {
 		tokenHash, err := keys.Sha256Hash([]byte(token))
 		if err != nil {
@@ -346,15 +346,10 @@ func EncodeProof(privateKey *ecdsa.PrivateKey, claims DPoPClaims) (string, error
 	return signedToken, nil
 }
 
-func CreateGRPCDisgest(req interface{}) (string, error) {
-	message, ok := req.(proto.Message)
-	if !ok {
-		return "", errors.New("invalid proto message")
-	}
-
-	v, err := proto.Marshal(message)
+func CreateDisgest(req interface{}) (string, error) {
+	v, err := json.Marshal(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
 	v, err = keys.Sha256Hash(v)
@@ -366,51 +361,40 @@ func CreateGRPCDisgest(req interface{}) (string, error) {
 }
 
 func extractPublicKeyHash(proof string) (string, error) {
-	// Parse the DPoP proof JWT without verifying the signature
 	proofToken, _, err := new(jwt.Parser).ParseUnverified(proof, jwt.MapClaims{})
 	if err != nil {
 		return "", fmt.Errorf("failed to parse DPoP proof JWT: %w", err)
 	}
 
-	// Extract the JWK from the DPoP proof header
 	jwk, ok := proofToken.Header["jwk"].(map[string]interface{})
 	if !ok {
 		return "", errors.New("invalid or missing JWK in DPoP proof header")
 	}
 
-	// Extract x and y coordinates
-	xStr, xOk := jwk["x"].(string)
-	yStr, yOk := jwk["y"].(string)
-	if !xOk || !yOk {
-		return "", errors.New("missing x or y coordinate in JWK")
-	}
+	rawKey := []byte{0x04}
 
-	// Decode x and y from base64
-	x, err := base64.RawURLEncoding.DecodeString(xStr)
-	if err != nil {
+	// Append X coordinate
+	if x, err := base64.RawURLEncoding.DecodeString(jwk["x"].(string)); err == nil {
+		rawKey = append(rawKey, x...)
+	} else {
 		return "", fmt.Errorf("failed to decode x coordinate: %w", err)
 	}
-	y, err := base64.RawURLEncoding.DecodeString(yStr)
-	if err != nil {
+
+	if y, err := base64.RawURLEncoding.DecodeString(jwk["y"].(string)); err == nil {
+		rawKey = append(rawKey, y...)
+	} else {
 		return "", fmt.Errorf("failed to decode y coordinate: %w", err)
 	}
 
-	// Create the public key using ecdh
-	curve := ecdh.P256()
-	publicKey, err := curve.NewPublicKey(append([]byte{0x04}, append(x, y...)...))
+	ecdhKey, err := ecdh.P256().NewPublicKey(rawKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to create public key: %w", err)
+		return "", fmt.Errorf("failed to create ECDH public key: %w", err)
 	}
 
-	// Get the public key bytes
-	publicKeyBytes := publicKey.Bytes()
-
-	// Calculate the thumbprint of the public key
-	dpopThumbprintHash, err := keys.Sha256Hash(publicKeyBytes)
+	thumbprint, err := keys.Sha256Hash(ecdhKey.Bytes())
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate thumbprint hash: %w", err)
 	}
 
-	// Return the hash as a hex string
-	return base64.RawURLEncoding.EncodeToString(dpopThumbprintHash), nil
+	return base64.RawURLEncoding.EncodeToString(thumbprint), nil
 }

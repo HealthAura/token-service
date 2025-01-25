@@ -86,7 +86,7 @@ jobs:
 
       - name: Set S3 Key Output
         id: set-s3-key
-        run: echo "::set-output name=s3_key::deployment-${{ github.sha }}.zip"
+        run: echo "s3_key=deployment-${{ github.sha }}.zip" >> "$GITHUB_OUTPUT"
 
   deploy-infrastructure:
     runs-on: ubuntu-latest

@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/HealthAura/token-service/internal/server"
+	"go.uber.org/zap"
 )
 
 var (
@@ -20,5 +21,6 @@ func init() {
 }
 
 func main() {
+	application.Logger.Info("starting token-service", zap.String("signingKey", application.Config.Service.SigningKeyARN))
 	server.StartLambda(application, application.Logger)
 }

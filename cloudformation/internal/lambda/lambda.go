@@ -72,7 +72,7 @@ func NewLambdaStack(scope constructs.Construct, id string, props *LambdaStackPro
 		Role:       lambdaRole,
 		Vpc:        config.Cfg.VPC,
 		VpcSubnets: &awsec2.SubnetSelection{
-			SubnetType: awsec2.SubnetType_PRIVATE_ISOLATED,
+			SubnetType: awsec2.SubnetType_PRIVATE_WITH_EGRESS,
 		},
 		Environment: &map[string]*string{
 			"TOKEN_SERVICE_DYNAMO_TABLE_NAME": props.TokenTable.TableName(),

@@ -72,7 +72,6 @@ func NewApplication(ctx context.Context) (*Application, error) {
 		)
 	}
 
-	logger.Info("starting token-service", zap.String("signingKey", cfg.Service.SigningKeyARN))
 	jwtOrch := jwt.New(kmsClient, cfg.Service.SigningKeyARN, cfg.Service.Issuer, store)
 	tokenManager := tokens.New(jwtOrch)
 
