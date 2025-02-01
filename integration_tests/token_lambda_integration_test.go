@@ -7,9 +7,12 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,9 +30,18 @@ type lamdaPreflight struct {
 }
 
 func newLambdaClient(t *testing.T) lamdaPreflight {
+	var client *tokenservice.Client
 	clientURL := os.Getenv("TOKEN_SERVICE_URL")
-	client, err := tokenservice.NewClient(clientURL)
-	require.Empty(t, err)
+
+	if clientURL == "" {
+		cmd := exec.Command("aws", "--endpoint-url=http://localhost:4566", "apigateway", "get-rest-apis", "--query", "items[?name=='TokenServiceApi'].id", "--output", "text")
+		apiID, err := cmd.Output()
+		require.NoError(t, err)
+
+		clientURL = fmt.Sprintf("http://localhost:4566/restapis/%s/prod/_user_request_/", strings.TrimSpace(string(apiID)))
+		client, err = tokenservice.NewClient(clientURL)
+		require.NoError(t, err)
+	}
 
 	dpopKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.Empty(t, err)
@@ -130,7 +142,7 @@ func TestTokenLambdaIntegration(t *testing.T) {
 						RefreshTokenTtl: strToPtr("60"),
 						RefreshToken:    genResp.RefreshToken,
 						RefreshDpop: &tokenservice.TokenserviceDPoP{
-							Proof: strToPtr(setupDPoPBoundLambda(t, preflight, *genResp.AccessToken)),
+							Proof: strToPtr(setupDPoPBoundLambda(t, preflight, *genResp.RefreshToken)),
 							WantClaims: &tokenservice.TokenserviceDPoPClaims{
 								Htm: strToPtr("POST"),
 								Htu: strToPtr("https://example.com/token"),
@@ -149,7 +161,7 @@ func TestTokenLambdaIntegration(t *testing.T) {
 						},
 					}
 
-					_, err = preflight.client.TokenServiceRefresh(context.Background(), refreshR)
+					resp, err = preflight.client.TokenServiceRefresh(context.Background(), refreshR)
 					assert.Empty(t, err)
 					assert.Equal(t, http.StatusOK, resp.StatusCode)
 				},

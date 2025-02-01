@@ -11,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 type TokenItem struct {
@@ -134,32 +133,8 @@ func (s dynamoStore) DeleteToken(ctx context.Context, signature string) error {
 }
 
 func (s dynamoStore) DeleteTokenByATH(ctx context.Context, ath string) error {
-	input := &dynamodb.QueryInput{
-		TableName:              aws.String(s.tableName),
-		IndexName:              aws.String("ath-index"),
-		KeyConditionExpression: aws.String("ath = :ath"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":ath": &types.AttributeValueMemberS{Value: ath},
-		},
-	}
-
-	result, err := s.dynamoClient.Query(ctx, input)
-	if err != nil {
-		return fmt.Errorf("failed to query token by ATH: %w", err)
-	}
-
-	if len(result.Items) == 0 {
-		return NotFoundErr{}
-	}
-
-	// Delete the found item
-	var item TokenItem
-	if err := attributevalue.UnmarshalMap(result.Items[0], &item); err != nil {
-		return fmt.Errorf("failed to unmarshal token item: %w", err)
-	}
-
 	key, err := attributevalue.MarshalMap(map[string]string{
-		"signature_hash": item.SignatureHash,
+		"signature_hash": ath,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal key: %w", err)

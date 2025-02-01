@@ -6,6 +6,15 @@ env:
   TOKEN_SERVICE_ROOT: .
 
 tasks:
+  build:
+    desc: Build the project
+    cmds:
+      - |
+        GOOS=linux GOARCH=amd64 go build -o bootstrap
+        chmod +x bootstrap
+        mv bootstrap ./lambda/
+        cd lambda
+        zip lambda.zip bootstrap
   generate:
     desc: run all code generators
     cmds: 
