@@ -32,6 +32,7 @@ type Config struct {
 	Region          string      `env:"AWS_REGION" envDefault:"us-east-1"`
 	LambdaCodeS3Key string      `env:"LAMBDA_CODE_S3_KEY" envDefault:"deployment.zip"`
 	VPCID           string      `env:"VPC_ID"`
+	TokenIssuer     string
 
 	VPC          awsec2.IVpc
 	LambdaBucket awss3.IBucket
@@ -46,6 +47,15 @@ func LoadConfig(scope constructs.Construct) {
 	cfg := Config{}
 	if err := env.Parse(&cfg); err != nil {
 		log.Fatalf("failed to load environment: %s", err.Error())
+	}
+
+	switch cfg.Environment {
+	case QA:
+		cfg.TokenIssuer = "https://qa.healthaura.com"
+	case Prod:
+		cfg.TokenIssuer = "https://healthaura.com"
+	case Dev:
+		cfg.TokenIssuer = "https://dev.healthaura.com"
 	}
 
 	envVariables := &awscdk.Environment{

@@ -52,6 +52,11 @@ func NewLambdaDynamoDBStack(scope constructs.Construct, id string) *LambdaDynamo
 		ExportName: jsii.String(string(config.Cfg.Environment) + "-token-table-arn"),
 	})
 
+	awscdk.NewCfnOutput(stack, jsii.String("TokenTableKeyARN"), &awscdk.CfnOutputProps{
+		Value:      tokenTableKey.KeyArn(),
+		ExportName: jsii.String(string(config.Cfg.Environment) + "-token-table-key-arn"),
+	})
+
 	return &LambdaDynamoDBStack{
 		stack: stack,
 		outputs: lambdaDynamoDBStackOutputs{
