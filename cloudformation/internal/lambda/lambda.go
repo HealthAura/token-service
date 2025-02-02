@@ -76,7 +76,7 @@ func NewLambdaStack(scope constructs.Construct, id string, props *LambdaStackPro
 		},
 		Environment: &map[string]*string{
 			"TOKEN_SERVICE_DYNAMO_TABLE_NAME": props.TokenTable.TableName(),
-			"TOKEN_SERVICE_ISSUER":            jsii.String("healthaura"),
+			"TOKEN_SERVICE_ISSUER":            &config.Cfg.TokenIssuer,
 			"TOKEN_SERVICE_SIGNING_KEY_ARN":   signingKey.KeyArn(),
 		},
 	})
